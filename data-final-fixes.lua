@@ -30,58 +30,99 @@ local function create_entity_sprite_from_item(item_prototype, item_name, prefix)
     return sprite_name
 end
 
+local function create_quality_overlay_sprites()
+    for name, quality in pairs(data.raw.quality or {}) do
+        local quality_name = string.lower(name)
+        if quality_name == "quality-unknown" then goto continue end
+        local sprite_name = "sl-" .. quality_name
+        if data.raw["sprite"][sprite_name] then goto continue end
+        
+        local layers = {}
+        if not quality.icons or #quality.icons == 0 then
+            -- Fallback to quality prototype's icon field
+            local icon_path = quality.icon or "__core__/graphics/quality-pips/" .. quality_name .. ".png"
+            local icon_size = 64 -- Force 32x32 for base quality pips
+            --log("No icons defined for base quality " .. quality_name .. ", using fallback icon: " .. icon_path .. " with icon_size: " .. icon_size)
+            table.insert(layers, {
+                filename = icon_path,
+                width = icon_size,
+                height = icon_size,
+                scale = 14 / icon_size, -- Scale to 14x14 for overlay
+                flags = {"gui-icon"}
+            })
+        else
+            -- Use all layers from quality.icons
+            for _, layer in ipairs(quality.icons) do
+                local icon_path = layer.icon
+                local icon_size = layer.icon_size or 64
+                local scale = 14 / icon_size -- Scale to 14x14 for overlay
+                local tint = layer.tint
+                --log("Layer for quality " .. quality_name .. ": " .. icon_path .. ", icon_size: " .. icon_size)
+                table.insert(layers, {
+                    filename = icon_path,
+                    width = icon_size,
+                    height = icon_size,
+                    scale = scale,
+                    tint = tint,
+                    flags = {"gui-icon"}
+                })
+            end
+        end
+        
+        -- Create a layered sprite
+        data:extend({
+            {
+                type = "sprite",
+                name = sprite_name,
+                layers = layers
+            }
+        })
+        --log("Created quality overlay sprite: " .. sprite_name .. " with " .. #layers .. " layers")
+        
+        ::continue::
+    end
+end
+
 local function create_filtered_fuel_sprites()
     for name, item in pairs(data.raw["item"]) do
-        -- Log every item being evaluated
-        log("Evaluating item: " .. name)
-        
+        --log("Evaluating item: " .. name)
         if item.fuel_value then
-            log("Item " .. name .. " has fuel_value: " .. tostring(item.fuel_value))
-            
+            --log("Item " .. name .. " has fuel_value: " .. tostring(item.fuel_value))
             if item.fuel_category == "chemical" then
-                log("Item " .. name .. " is in chemical category")
-                
+                --log("Item " .. name .. " is in chemical category")
                 if not string.find(name:lower(), "seed") and
                    not string.find(name:lower(), "egg") and
                    not string.find(name:lower(), "spoil") then
-                    log("Item " .. name .. " passes name filters (no seed/egg/spoil)")
-                    
+                    --log("Item " .. name .. " passes name filters (no seed/egg/spoil)")
                     if item.spoil_result == nil then
-                        log("Item " .. name .. " has no spoil_result, creating sprite")
+                        --log("Item " .. name .. " has no spoil_result, creating sprite")
                         create_entity_sprite_from_item(item, name, "sl-")
                     else
-                        log("Item " .. name .. " has spoil_result, skipping")
+                        --log("Item " .. name .. " has spoil_result, skipping")
                     end
                 else
-                    log("Item " .. name .. " contains seed/egg/spoil, skipping")
+                    --log("Item " .. name .. " contains seed/egg/spoil, skipping")
                 end
             else
-                log("Item " .. name .. " is not in chemical category, skipping")
+                --log("Item " .. name .. " is not in chemical category, skipping")
             end
         else
-            log("Item " .. name .. " has no fuel_value, skipping")
+            --log("Item " .. name .. " has no fuel_value, skipping")
         end
     end
 end
 
--- Process all items that need entity sprites
 local function create_special_item_sprites()
-    -- Process repair tools
     for name, item in pairs(data.raw["repair-tool"]) do
         create_entity_sprite_from_item(item, name, "sl-")
     end
-    
-    -- Process ammo
     for name, item in pairs(data.raw["ammo"]) do
         create_entity_sprite_from_item(item, name, "sl-")
     end
-    
-    -- Process specific robot types
     local special_items = {
         "construction-robot",
         "logistic-robot"
     }
-    
     for _, item_name in pairs(special_items) do
         local item = data.raw["item"][item_name]
         if item then
@@ -90,70 +131,7 @@ local function create_special_item_sprites()
     end
 end
 
--- Function to create quality overlay sprites using data.raw.quality
-local function create_quality_overlay_sprites()
-    for name, quality in pairs(data.raw.quality or {}) do
-        local quality_name = string.lower(name)
-        -- Skip "unknown" quality
-        if quality_name == "quality-unknown" then
-            goto continue
-        end
-        local sprite_name = "sl-" .. quality_name
-        
-        -- Skip if sprite already exists
-        if data.raw["sprite"][sprite_name] then
-            goto continue
-        end
-        
-        -- Determine the icon path, size, and tint
-        local icon_path, icon_size, tint
-        if quality.icons and quality.icons[2] then
-            -- Use the second icon (tinted pip) for modded qualities
-            icon_path = quality.icons[2].icon
-            icon_size = quality.icons[2].icon_size or 64
-            tint = quality.icons[2].tint
-        elseif quality.icons and quality.icons[1] then
-            -- Fallback to first icon if second is unavailable
-            icon_path = quality.icons[1].icon
-            icon_size = quality.icons[1].icon_size or 64
-            tint = quality.icons[1].tint
-        elseif quality.icon then
-            -- Use single icon for vanilla qualities
-            icon_path = quality.icon
-            icon_size = quality.icon_size or 64
-        else
-            -- Fallback to vanilla path
-            icon_path = "__base__/graphics/icons/" .. quality_name .. ".png"
-            icon_size = 64
-        end
-        
-        -- Verify the icon path exists
-
-        
-        -- Create the sprite
-        local sprite = {
-            type = "sprite",
-            name = sprite_name,
-            filename = icon_path,
-            priority = "medium",
-            width = icon_size,
-            height = icon_size,
-            scale = 14 / icon_size, -- Scale to match 14x14 GUI overlay
-            flags = {"gui-icon"}
-        }
-        if tint then
-            sprite.tint = tint
-        end
-        
-        data:extend({ sprite })
-        
-        log("Created quality overlay sprite " .. sprite_name .. " with icon_size=" .. icon_size .. ", scale=" .. (14 / icon_size) .. ", tint=" .. (tint and string.format("{%g,%g,%g}", tint[1] or tint.r, tint[2] or tint.g, tint[3] or tint.b) or "none"))
-        
-        ::continue::
-    end
-end
-
--- Register all functions to run at data-final-fixes stage
+-- Register functions to run at data-final-fixes stage
 create_special_item_sprites()
 create_filtered_fuel_sprites()
 create_quality_overlay_sprites()
