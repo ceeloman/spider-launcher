@@ -1,0 +1,14 @@
+{
+  "name": "spider-launcher",
+  "version": "2.8.0",
+  "title": "Orbital Vehicle Deployment",
+  "author": "Cee lo",
+  "factorio_version": "2.0",
+  "dependencies": [
+    "base >= 2.0.43",
+    "? space-age",
+    "? space-exploration",
+    "? ceelos-vehicle-tweaks"
+  ],
+  "description": "Deploy Spidertrons, cars, tanks and any other vehicles to the planet below, and ready with ammo, fuel and construction robots."
+} 
