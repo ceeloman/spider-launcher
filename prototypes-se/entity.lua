@@ -7,8 +7,8 @@ data:extend({
     {
       type = "container",
       name = "ovd-deployment-container",
-      icon = "__spider-launcher__/graphics/icons/cargo-bay.png",
-      icon_size = 64,
+      icon = "__core__/graphics/empty.png",  -- 1x1 transparent PNG
+      icon_size = 1,
       flags = {"placeable-neutral", "player-creation"},
       minable = {mining_time = 0.5, result = "ovd-deployment-container"},
       max_health = 350,
@@ -22,21 +22,24 @@ data:extend({
       se_allow_in_space = true,
       picture = {
         layers = {
-          util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/bays/shared-cargo-bay-0",
           {
+            filename = "__spider-launcher__/graphics/entity/cargo-hubs/ovd-cargo-bay-complete.png",
+            priority = "high",
+            width = 256,
+            height = 256,
             scale = 0.5,
-            shift = {0, -1}
-          }),
-          util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/bays/planet-cargo-bay-3",
-          {
-            scale = 0.5,
-            shift = {0, -1}
-          }),
+            shift = {0, 0}
+          },
           util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/bays/shared-cargo-bay-shadow",
           {
             scale = 0.5,
             shift = {3, 0.5},
             draw_as_shadow = true
+          }),
+          util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/hatches/planet-cargo-bay-occluder",
+          {
+            scale = 0.5,
+            shift = {0, -1}
           }),
           util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/bays/shared-cargo-bay-emission",
           {
@@ -44,11 +47,6 @@ data:extend({
             shift = {0, -1},
             draw_as_glow = true,
             blend_mode = "additive"
-          }),
-          util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/hatches/planet-cargo-bay-occluder",
-          {
-            scale = 0.5,
-            shift = {0, -1}
           })
         }
       }

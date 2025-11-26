@@ -12,6 +12,7 @@ if is_space_exploration_active then
   require("prototypes-se.entity")
   require("prototypes-se.item")
   require("prototypes-se.recipe")
+  require("prototypes-se.shortcuts")  -- SE shortcut definition
   -- require("prototypes-se.technology")  -- commented out for now
   -- require("prototypes-se.custom-inputs")
   -- require("prototypes-se.launch")

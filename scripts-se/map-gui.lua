@@ -52,6 +52,22 @@ function get_ammo_category(item_name)
     return ammo_category_map[item_name]
 end
 
+-- Helper function to check if a zone type is a space type (where containers can be placed)
+local function is_space_zone_type(zone_type)
+    return zone_type == "orbit" or zone_type == "asteroid-belt" or zone_type == "asteroid-field"
+end
+
+-- Helper function to check if player is on a space surface (where deployment is not allowed)
+local function is_on_space_surface(surface)
+    local success, zone = pcall(function()
+        return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
+    end)
+    if success and zone then
+        return is_space_zone_type(zone.type)
+    end
+    return false
+end
+
 -- SE-SPECIFIC: find_orbital_vehicles function for Space Exploration
 -- Uses zone checking instead of platform checking
 function map_gui.find_orbital_vehicles(player_surface, player)
@@ -79,74 +95,58 @@ function map_gui.find_orbital_vehicles(player_surface, player)
         return available_vehicles
     end
     
-    -- Determine which orbit surface to search
+    -- Determine which space surface to search (orbit, asteroid-belt, or asteroid-field)
     local target_orbit_surface = nil
     
-    if player_zone.type == "orbit" then
-        -- Player is already on an orbit - use that surface
+    if is_space_zone_type(player_zone.type) then
+        -- Player is already on a space surface (orbit, asteroid-belt, or asteroid-field) - use that surface
         target_orbit_surface = player_surface
-        log("[SE] Player is on orbit surface: " .. player_surface.name)
-        if player then player.print("Player is on orbit surface: " .. player_surface.name) end
+        log("[SE] Player is on space surface: " .. player_surface.name .. " (type: " .. player_zone.type .. ")")
+        if player then player.print("Player is on space surface: " .. player_surface.name .. " (type: " .. player_zone.type .. ")") end
     elseif player_zone.type == "planet" or player_zone.type == "moon" then
-        -- Player is on a planet/moon - find the orbit for this planet
+        -- Player is on a planet/moon - find the orbit, asteroid-belt, or asteroid-field for this planet
         local planet_name = player_zone.name or player_surface.name
         local expected_orbit_name = planet_name .. " Orbit"
         
         log("[SE] Player is on planet/moon: " .. planet_name)
-        log("[SE] Looking for orbit surface named: " .. expected_orbit_name)
+        log("[SE] Looking for space surfaces (orbit, asteroid-belt, asteroid-field) for: " .. planet_name)
         if player then 
             player.print("Player is on planet/moon: " .. planet_name)
-            player.print("Looking for orbit: " .. expected_orbit_name)
+            player.print("Looking for space surfaces...")
         end
         
-        -- Search all surfaces for the matching orbit
+        -- Search all surfaces for matching space zones (orbit, asteroid-belt, asteroid-field)
+        -- First try orbit (most common)
         for _, surface in pairs(game.surfaces) do
-            log("[SE] Checking surface: " .. surface.name .. " against expected: " .. expected_orbit_name)
-            if surface.name == expected_orbit_name then
-                log("[SE] Surface name matches! Verifying zone...")
-                -- Verify it's actually an orbit zone
-                local zone_success, zone_result = pcall(function()
-                    return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
-                end)
-                
-                if zone_success and zone_result then
-                    log("[SE] Zone type: " .. (zone_result.type or "unknown"))
-                    if zone_result.parent then
-                        log("[SE] Orbit parent name: " .. (zone_result.parent.name or "unknown") .. ", Planet name: " .. planet_name)
-                    else
-                        log("[SE] Orbit has no parent")
-                    end
+            log("[SE] Checking surface: " .. surface.name)
+            local zone_success, zone_result = pcall(function()
+                return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
+            end)
+            
+            if zone_success and zone_result and is_space_zone_type(zone_result.type) then
+                -- Check if this space zone's parent matches the player's zone
+                local parent_matches = true
+                if zone_result.parent then
+                    parent_matches = (zone_result.parent.name == planet_name)
+                    log("[SE] Space zone parent: " .. (zone_result.parent.name or "unknown") .. ", Planet: " .. planet_name)
+                else
+                    log("[SE] Space zone has no parent")
                 end
                 
-                if zone_success and zone_result and zone_result.type == "orbit" then
-                    -- Check if this orbit's parent matches the player's zone
-                    -- Make parent check optional - if parent exists, verify it matches, otherwise just use the orbit
-                    local parent_matches = true
-                    if zone_result.parent then
-                        parent_matches = (zone_result.parent.name == planet_name)
-                        if not parent_matches then
-                            log("[SE] Parent name mismatch: " .. (zone_result.parent.name or "nil") .. " != " .. planet_name)
-                            if player then player.print("Warning: Orbit parent mismatch, but using orbit anyway") end
-                        end
-                    else
-                        log("[SE] No parent found, using orbit anyway")
-                        if player then player.print("Warning: Orbit has no parent, but using orbit anyway") end
-                    end
-                    
-                    -- Use the orbit if it matches by name and type, even if parent check fails
+                -- Use the space surface if parent matches, or if it's an orbit with matching name
+                -- Note: asteroid-belt and asteroid-field zones are handled via parent matching (same as orbit when parent is set)
+                if parent_matches or (zone_result.type == "orbit" and surface.name == expected_orbit_name) then
                     target_orbit_surface = surface
-                    log("[SE] Found matching orbit surface: " .. surface.name)
-                    if player then player.print("Found orbit: " .. surface.name) end
+                    log("[SE] Found matching space surface: " .. surface.name .. " (type: " .. zone_result.type .. ")")
+                    if player then player.print("Found space surface: " .. surface.name .. " (type: " .. zone_result.type .. ")") end
                     break
-                else
-                    log("[SE] Surface found but zone type is not orbit: " .. (zone_result and zone_result.type or "unknown"))
                 end
             end
         end
         
         if not target_orbit_surface then
-            log("[SE] Could not find orbit surface for planet: " .. planet_name)
-            if player then player.print("ERROR: Could not find orbit for " .. planet_name) end
+            log("[SE] Could not find space surface (orbit/asteroid-belt/asteroid-field) for planet: " .. planet_name)
+            if player then player.print("ERROR: Could not find space surface for " .. planet_name) end
             return available_vehicles
         end
     else
@@ -155,21 +155,21 @@ function map_gui.find_orbital_vehicles(player_surface, player)
         return available_vehicles
     end
     
-    -- Now search the target orbit surface for containers
+    -- Now search the target space surface for containers
     if target_orbit_surface then
-        log("[SE] Searching orbit surface: " .. target_orbit_surface.name)
-        if player then player.print("Searching orbit: " .. target_orbit_surface.name) end
+        log("[SE] Searching space surface: " .. target_orbit_surface.name)
+        if player then player.print("Searching space surface: " .. target_orbit_surface.name) end
         
-        -- SE-SPECIFIC: Find deployment containers (ovd-deployment-container) on this orbit surface
+        -- SE-SPECIFIC: Find deployment containers (ovd-deployment-container) on this space surface
         -- In SE, the container IS the hub - no need to check for separate hubs
         local containers = target_orbit_surface.find_entities_filtered({
             name = "ovd-deployment-container"
             -- No force filter - search all forces
         })
         
-        log("[SE] Found " .. #containers .. " deployment containers on orbit " .. target_orbit_surface.name)
+        log("[SE] Found " .. #containers .. " deployment containers on space surface " .. target_orbit_surface.name)
         if player then 
-            player.print("Found " .. #containers .. " deployment containers on orbit " .. target_orbit_surface.name)
+            player.print("Found " .. #containers .. " deployment containers on space surface " .. target_orbit_surface.name)
         end
         
         -- Process each container (container = hub in SE)
@@ -265,8 +265,8 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                         end
                                     end)
                                     
-                                    -- Build tooltip with orbit details
-                                    local tooltip = "Orbit: " .. target_orbit_surface.name .. "\nSlot: " .. i
+                                    -- Build tooltip with space surface details
+                                    local tooltip = "Space Surface: " .. target_orbit_surface.name .. "\nSlot: " .. i
                                     
                                     -- Get entity name for placing
                                     local entity_name = stack.name
@@ -306,8 +306,8 @@ function map_gui.find_orbital_vehicles(player_surface, player)
         end
         
         if #containers == 0 then
-            log("[SE] No deployment containers found on orbit " .. target_orbit_surface.name)
-            if player then player.print("No deployment containers found on orbit " .. target_orbit_surface.name) end
+            log("[SE] No deployment containers found on space surface " .. target_orbit_surface.name)
+            if player then player.print("No deployment containers found on space surface " .. target_orbit_surface.name) end
         end
     end
     
@@ -417,7 +417,7 @@ function map_gui.show_deployment_menu(player, vehicles)
     -- Add title
     frame.add{
         type = "label",
-        caption = "Deploy from orbit above " .. player.surface.name:gsub("^%l", string.upper),
+        caption = "Deploy from space above " .. player.surface.name:gsub("^%l", string.upper),
         style = "caption_label"
     }
     
@@ -782,9 +782,359 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         return
     end
     
-    -- Create the extras menu frame (simplified - full implementation would be identical to SA version)
-    -- For brevity, showing key structure - the full GUI code would be the same as SA version
-    player.print("Extras menu functionality - full implementation needed")
+    -- Create the extras menu frame
+    local frame = player.gui.screen.add{
+        type = "frame",
+        name = "spidertron_extras_frame",
+        direction = "vertical"
+    }
+    player.opened = frame
+    frame.auto_center = false
+    local resolution = player.display_resolution
+    frame.location = {x = resolution.width / 2 - 250, y = resolution.height / 2 - 200}
+    
+    -- Add title bar
+    local title_flow = frame.add{
+        type = "flow",
+        direction = "horizontal",
+        name = "title_flow"
+    }
+    local title_label = title_flow.add{
+        type = "label",
+        caption = {"", " Deployment Add-ons"},
+        style = "frame_title"
+    }
+    title_label.drag_target = frame
+    local drag_handle = title_flow.add{
+        type = "empty-widget",
+        style = "draggable_space_header"
+    }
+    drag_handle.style.horizontally_stretchable = true
+    drag_handle.style.height = 24
+    drag_handle.style.right_margin = 4
+    drag_handle.ignored_by_interaction = false
+    drag_handle.drag_target = frame
+    local back_button = title_flow.add{
+        type = "sprite-button",
+        name = "back_to_deployment_btn",
+        sprite = "utility/backward_arrow",
+        hovered_sprite = "utility/backward_arrow",
+        clicked_sprite = "utility/backward_arrow",
+        tooltip = {"", "Back to Deployment Menu"},
+        style = "frame_action_button"
+    }
+    local close_button = title_flow.add{
+        type = "sprite-button",
+        name = "close_extras_menu_btn",
+        sprite = "utility/close",
+        hovered_sprite = "utility/close_black",
+        clicked_sprite = "utility/close_black",
+        tooltip = {"gui.close"},
+        style = "frame_action_button"
+    }
+    
+    frame.add{
+        type = "label",
+        caption = "Add items to deploy with " .. vehicle_data.name,
+        style = "caption_label"
+    }
+    
+    -- Create tabbed pane
+    local tabbed_pane = frame.add{
+        type = "tabbed-pane",
+        name = "extras_tabbed_pane"
+    }
+    
+    -- Helper function to sort qualities by level
+    local function sort_qualities(a, b)
+        return a.level > b.level
+    end
+    
+    -- Track if any items are shown for enabling the deploy button
+    local items_shown = false
+    
+    -- Helper function to add item entry
+    local function add_item_entry(items_table, item, item_info)
+        if item_info and item_info.total > 0 then
+            local qualities = {}
+            for _, quality_data in pairs(item_info.by_quality) do
+                table.insert(qualities, quality_data)
+            end
+            table.sort(qualities, sort_qualities)
+            
+            for _, quality_data in ipairs(qualities) do
+                if quality_data.count > 0 then
+                    items_shown = true
+                    -- Left-aligned sprite and name
+                    local left_flow = items_table.add{
+                        type = "flow",
+                        direction = "horizontal"
+                    }
+                    left_flow.style.vertical_align = "center"
+                    local icon_container = left_flow.add{
+                        type = "flow"
+                    }
+                    icon_container.style.width = 28
+                    icon_container.style.height = 28
+                    icon_container.style.padding = 0
+                    icon_container.style.margin = 0
+                    local sprite = icon_container.add{
+                        type = "sprite-button",
+                        sprite = get_sprite_name(item.name),
+                        tooltip = string.gsub(quality_data.name, "^%l", string.upper) -- Capitalize first letter
+                    }
+                    sprite.style.size = 28
+                    sprite.style.padding = 0
+                    sprite.style.margin = 0
+                    local quality_name = string.lower(quality_data.name)
+                    local overlay_name = "sl-" .. quality_name
+                    local quality_overlay = icon_container.add{
+                        type = "sprite",
+                        sprite = overlay_name,
+                        tooltip = quality_data.name .. " quality"
+                    }
+                    quality_overlay.style.size = 14
+                    quality_overlay.style.top_padding = 13
+                    quality_overlay.style.left_padding = -30
+                    left_flow.add{
+                        type = "label",
+                        caption = prototypes.item[item.name].localised_name or item.name .. " (" .. quality_data.count .. " available)"
+                    }
+                    
+                    -- Right-aligned slider, text box, and stack button
+                    local right_flow = items_table.add{
+                        type = "flow",
+                        direction = "horizontal"
+                    }
+                    right_flow.style.horizontal_align = "right"
+                    right_flow.style.horizontally_stretchable = true
+                    right_flow.style.vertical_align = "center"
+                    local stack_size = 50
+                    local prototype = prototypes.item[item.name]
+                    if prototype then
+                        stack_size = prototype.stack_size
+                    end
+                    local slider = right_flow.add{
+                        type = "slider",
+                        name = "slider_" .. item.name .. "_" .. quality_name,
+                        minimum_value = 0,
+                        maximum_value = quality_data.count,
+                        value = 0,
+                        value_step = 1
+                    }
+                    slider.style.width = 140
+                    local count_textfield = right_flow.add{
+                        type = "textfield",
+                        name = "text_" .. item.name .. "_" .. quality_name,
+                        text = "0",
+                        numeric = true,
+                        allow_decimal = false,
+                        allow_negative = false
+                    }
+                    count_textfield.style.width = 40
+                    count_textfield.style.horizontal_align = "right"
+                    local stack_button = right_flow.add{
+                        type = "sprite-button",
+                        name = "stack_" .. item.name .. "_" .. quality_data.name,
+                        sprite = "ovd_stack",
+                        tooltip = "Add 1 stack (" .. stack_size .. " items)",
+                        tags = {
+                            action = "add_stack",
+                            item_name = item.name,
+                            quality_name = quality_data.name,
+                            stack_size = stack_size,
+                            max_value = quality_data.count
+                        }
+                    }
+                    stack_button.style.size = 24
+                    slider.tooltip = "Select quantity to add"
+                    count_textfield.tooltip = "Enter quantity to add"
+                    count_textfield.tags = {max_value = quality_data.count}
+                    slider.tags = {
+                        item_name = item.name,
+                        quality_name = quality_data.name,
+                        max_value = quality_data.count
+                    }
+                end
+            end
+        else
+            local left_flow = items_table.add{
+                type = "flow",
+                direction = "horizontal"
+            }
+            left_flow.style.vertical_align = "center"
+            local sprite = left_flow.add{
+                type = "sprite-button",
+                sprite = get_sprite_name(item.name),
+                tooltip = "No " .. item.display_name .. " available",
+                enabled = false
+            }
+            sprite.style.size = 28
+            left_flow.add{
+                type = "label",
+                caption = item.display_name .. " (0 available)",
+                tooltip = "No " .. item.display_name .. " available"
+            }.style.font_color = {r=0.5, g=0.5, b=0.5}
+            local right_flow = items_table.add{
+                type = "flow",
+                direction = "horizontal"
+            }
+            right_flow.style.horizontal_align = "right"
+            right_flow.style.horizontally_stretchable = true
+            right_flow.add{
+                type = "label",
+                caption = "Not available",
+                tooltip = "No " .. item.display_name .. " available"
+            }.style.font_color = {r=0.5, g=0.5, b=0.5}
+        end
+    end
+    
+    -- Tab 1: Utilities (always shown)
+    local utilities_tab = tabbed_pane.add{
+        type = "tab",
+        name = "utilities_tab",
+        caption = "[img=item/repair-pack] Utilities", -- Rich text with item icon
+        tooltip = "Utilities"
+    }
+    local utilities_content = tabbed_pane.add{
+        type = "flow",
+        name = "utilities_content",
+        direction = "vertical"
+    }
+    local utilities_scroll_pane = utilities_content.add{
+        type = "scroll-pane",
+        name = "utilities_scroll_pane",
+        horizontal_scroll_policy = "never",
+        vertical_scroll_policy = "auto"
+    }
+    utilities_scroll_pane.style.maximal_height = 300
+    utilities_scroll_pane.style.minimal_width = 500
+    local utilities_table = utilities_scroll_pane.add{
+        type = "table",
+        name = "utilities_table",
+        column_count = 2, -- Left (sprite+name), Right (slider+text+stack)
+        style = "table"
+    }
+    for _, item in ipairs(utilities_list) do
+        add_item_entry(utilities_table, item, available_items[item.name])
+    end
+    tabbed_pane.add_tab(utilities_tab, utilities_content)
+    
+    -- Tab 2: Ammo (shown if vehicle has guns)
+    if has_guns then
+        local ammo_tab = tabbed_pane.add{
+            type = "tab",
+            name = "ammo_tab",
+            caption = "[img=item/firearm-magazine] Ammo", -- Rich text with item icon
+            tooltip = "Ammo"
+        }
+        local ammo_content = tabbed_pane.add{
+            type = "flow",
+            name = "ammo_content",
+            direction = "vertical"
+        }
+        local ammo_scroll_pane = ammo_content.add{
+            type = "scroll-pane",
+            name = "ammo_scroll_pane",
+            horizontal_scroll_policy = "never",
+            vertical_scroll_policy = "auto"
+        }
+        ammo_scroll_pane.style.maximal_height = 300
+        ammo_scroll_pane.style.minimal_width = 500
+        if #ammo_list > 0 then
+            local ammo_table = ammo_scroll_pane.add{
+                type = "table",
+                name = "ammo_table",
+                column_count = 2,
+                style = "table"
+            }
+            for _, item in ipairs(ammo_list) do
+                add_item_entry(ammo_table, item, available_items[item.name])
+            end
+        else
+            ammo_scroll_pane.add{
+                type = "label",
+                caption = "No Ammo items available"
+            }.style.font_color = {r=0.5, g=0.5, b=0.5}
+        end
+        tabbed_pane.add_tab(ammo_tab, ammo_content)
+    end
+    
+    -- Tab 3: Fuel (shown if vehicle needs fuel)
+    if needs_fuel then
+        local fuel_tab = tabbed_pane.add{
+            type = "tab",
+            name = "fuel_tab",
+            caption = "[img=item/rocket-fuel] Fuel", -- Rich text with item icon
+            tooltip = "Fuel"
+        }
+        local fuel_content = tabbed_pane.add{
+            type = "flow",
+            name = "fuel_content",
+            direction = "vertical"
+        }
+        local fuel_scroll_pane = fuel_content.add{
+            type = "scroll-pane",
+            name = "fuel_scroll_pane",
+            horizontal_scroll_policy = "never",
+            vertical_scroll_policy = "auto"
+        }
+        fuel_scroll_pane.style.maximal_height = 300
+        fuel_scroll_pane.style.minimal_width = 500
+        if #fuel_list > 0 then
+            local fuel_table = fuel_scroll_pane.add{
+                type = "table",
+                name = "fuel_table",
+                column_count = 2,
+                style = "table"
+            }
+            for _, item in ipairs(fuel_list) do
+                add_item_entry(fuel_table, item, available_items[item.name])
+            end
+        else
+            fuel_scroll_pane.add{
+                type = "label",
+                caption = "No Fuel items available"
+            }.style.font_color = {r=0.5, g=0.5, b=0.5}
+        end
+        tabbed_pane.add_tab(fuel_tab, fuel_content)
+    end
+    
+    -- Add spacer
+    local vert_spacer = frame.add{
+        type = "empty-widget"
+    }
+    vert_spacer.style.minimal_height = 10
+
+    -- Add deploy button row
+    local button_flow = frame.add{
+        type = "flow",
+        name = "button_flow",
+        direction = "horizontal"
+    }
+    button_flow.style.horizontal_align = "right"
+    local button_spacer = button_flow.add{
+        type = "empty-widget"
+    }
+    button_spacer.style.minimal_width = 10
+    button_flow.add{
+        type = "button",
+        name = "skip_extras_btn",
+        caption = "Deploy Without Extras",
+        style = "back_button"
+    }
+    button_flow.add{
+        type = "button",
+        name = "confirm_deploy_with_extras_btn",
+        caption = "Deploy with Selected Items",
+        style = "confirm_button"
+    }
+
+    storage.temp_deployment_data = {
+        vehicle = vehicle_data,
+        deploy_target = deploy_target,
+        available_items = available_items
+    }
 end
 
 -- Improved platform inventory scanner with better debugging
@@ -812,7 +1162,7 @@ function map_gui.scan_platform_inventory(vehicle_data)
         return available_items
     end
     
-    log("[SE] Scanning inventory of hub on orbit: " .. vehicle_data.platform_name)
+    log("[SE] Scanning inventory of hub on space surface: " .. vehicle_data.platform_name)
     
     -- Only use chest inventory to avoid duplicates
     local inventory = hub.get_inventory(defines.inventory.chest)
@@ -902,16 +1252,10 @@ function map_gui.on_player_changed_render_mode(event)
     -- Check both conditions
     local spidertron_researched = player.force.technologies["spidertron"].researched
     
-    -- SE-SPECIFIC: Check if player is on an orbit surface instead of platform
-    local is_on_orbit = false
-    local success, zone = pcall(function()
-        return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = player.surface.index})
-    end)
-    if success and zone and zone.type == "orbit" then
-        is_on_orbit = true
-    end
+    -- SE-SPECIFIC: Check if player is on a space surface (orbit, asteroid-belt, asteroid-field)
+    local is_on_space = is_on_space_surface(player.surface)
     
-    if spidertron_researched and not is_on_orbit then
+    if spidertron_researched and not is_on_space then
         player.set_shortcut_available("orbital-spidertron-deploy", true)
     else
         player.set_shortcut_available("orbital-spidertron-deploy", false)
@@ -923,17 +1267,11 @@ function map_gui.initialize_player_shortcuts(player)
     -- First check if the technology is researched
     local spidertron_researched = player.force.technologies["spidertron"].researched
     
-    -- SE-SPECIFIC: Check if player is on an orbit surface instead of platform
-    local is_on_orbit = false
-    local success, zone = pcall(function()
-        return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = player.surface.index})
-    end)
-    if success and zone and zone.type == "orbit" then
-        is_on_orbit = true
-    end
+    -- SE-SPECIFIC: Check if player is on a space surface (orbit, asteroid-belt, asteroid-field)
+    local is_on_space = is_on_space_surface(player.surface)
     
-    -- Only enable if researched AND not on an orbit
-    if spidertron_researched and not is_on_orbit then
+    -- Only enable if researched AND not on a space surface
+    if spidertron_researched and not is_on_space then
         player.set_shortcut_available("orbital-spidertron-deploy", true)
     else
         player.set_shortcut_available("orbital-spidertron-deploy", false)
@@ -947,7 +1285,170 @@ function map_gui.initialize_all_players()
     end
 end
 
--- Handle GUI clicks (simplified - full implementation needed)
+-- Handle extras menu button clicks
+local function handle_extras_menu_clicks(event)
+    local element = event.element
+    if not element or not element.valid then return end
+    
+    local player = game.get_player(event.player_index)
+    if not player then return end
+    
+    -- Close extras menu button
+    if element.name == "close_extras_menu_btn" then
+        if player.gui.screen["spidertron_extras_frame"] then
+            player.gui.screen["spidertron_extras_frame"].destroy()
+        end
+        return
+    end
+    
+    -- Back to deployment menu button
+    if element.name == "back_to_deployment_btn" then
+        -- Close the extras menu
+        if player.gui.screen["spidertron_extras_frame"] then
+            player.gui.screen["spidertron_extras_frame"].destroy()
+        end
+        
+        -- Retrieve stored vehicle data
+        local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
+        
+        -- Reopen the deployment menu with the same vehicles list
+        map_gui.show_deployment_menu(player, vehicles)
+        return
+    end
+    
+    -- Skip extras button (deploy without extras)
+    if element.name == "skip_extras_btn" then
+        player.print("========== SKIP EXTRAS BUTTON CLICKED ==========")
+        player.print("Player: " .. player.name)
+        
+        -- Get the deployment data
+        local deployment_data = storage.temp_deployment_data
+        if not deployment_data then
+            player.print("ERROR: No deployment data found in storage")
+            return
+        end
+        
+        player.print("Deployment data found:")
+        player.print("  Vehicle name: " .. (deployment_data.vehicle.name or "unknown"))
+        player.print("  Deploy target: " .. (deployment_data.deploy_target or "unknown"))
+        player.print("  Hub entity: " .. (deployment_data.vehicle.hub and deployment_data.vehicle.hub.name or "nil"))
+        if deployment_data.vehicle.hub then
+            player.print("  Hub unit_number: " .. (deployment_data.vehicle.hub.unit_number or "nil"))
+            player.print("  Hub valid: " .. tostring(deployment_data.vehicle.hub.valid))
+        end
+        
+        -- Close the extras menu
+        if player.gui.screen["spidertron_extras_frame"] then
+            player.gui.screen["spidertron_extras_frame"].destroy()
+        end
+        
+        player.print("Calling deploy_spider_vehicle()...")
+        -- Deploy the vehicle without extras
+        deployment.deploy_spider_vehicle(player, deployment_data.vehicle, deployment_data.deploy_target)
+        
+        -- Clear the temp data
+        storage.temp_deployment_data = nil
+        player.print("========== SKIP EXTRAS COMPLETE ==========")
+        
+        return
+    end
+    
+    -- Confirm deployment with extras
+    if element.name == "confirm_deploy_with_extras_btn" then
+        player.print("========== CONFIRM DEPLOY WITH EXTRAS BUTTON CLICKED ==========")
+        player.print("Player: " .. player.name)
+        
+        -- Get the deployment data
+        local deployment_data = storage.temp_deployment_data
+        if not deployment_data then
+            player.print("ERROR: No deployment data found in storage")
+            return
+        end
+        
+        player.print("Deployment data found:")
+        player.print("  Vehicle name: " .. (deployment_data.vehicle.name or "unknown"))
+        player.print("  Deploy target: " .. (deployment_data.deploy_target or "unknown"))
+        player.print("  Hub entity: " .. (deployment_data.vehicle.hub and deployment_data.vehicle.hub.name or "nil"))
+        if deployment_data.vehicle.hub then
+            player.print("  Hub unit_number: " .. (deployment_data.vehicle.hub.unit_number or "nil"))
+            player.print("  Hub valid: " .. tostring(deployment_data.vehicle.hub.valid))
+        end
+    
+        -- Build a list of selected extras
+        local selected_extras = {}
+    
+        -- Helper function to recursively search for text fields
+        local function find_text_fields(element, results)
+            if not element or not element.valid then return end
+            
+            -- Check if this is a text field with our naming pattern
+            if element.type == "textfield" and 
+               element.name and 
+               string.find(element.name, "^text_") then
+                table.insert(results, element)
+            end
+            
+            -- Recursively search children
+            if element.children then
+                for _, child in pairs(element.children) do
+                    find_text_fields(child, results)
+                end
+            end
+        end
+    
+        -- Find all text fields
+        local text_fields = {}
+        local frame = player.gui.screen["spidertron_extras_frame"]
+        if frame and frame.valid then
+            find_text_fields(frame, text_fields)
+            player.print("Found " .. #text_fields .. " text fields in extras menu")
+            
+            -- Process each text field
+            for _, field in pairs(text_fields) do
+                local name = field.name
+                local _, _, item_name, quality = string.find(name, "text_(.+)_(.+)")
+                
+                if item_name and quality then
+                    local count = tonumber(field.text) or 0
+                    if count > 0 then
+                        table.insert(selected_extras, {
+                            name = item_name,
+                            count = count,
+                            quality = quality
+                        })
+                        player.print("Selected extra: " .. count .. "x " .. quality .. " " .. item_name)
+                    end
+                end
+            end
+        else
+            player.print("WARNING: Extras frame not found or invalid")
+        end
+        
+        player.print("Total extras selected: " .. #selected_extras)
+    
+        -- Close the extras menu
+        if player.gui.screen["spidertron_extras_frame"] then
+            player.gui.screen["spidertron_extras_frame"].destroy()
+        end
+    
+        player.print("Calling deploy_spider_vehicle() with " .. #selected_extras .. " extras...")
+        -- Deploy the vehicle with extras
+        deployment.deploy_spider_vehicle(
+            player, 
+            deployment_data.vehicle, 
+            deployment_data.deploy_target,
+            selected_extras
+        )
+    
+        -- Clear the temp data
+        storage.temp_deployment_data = nil
+        player.print("========== CONFIRM DEPLOY WITH EXTRAS COMPLETE ==========")
+    
+        return
+    end
+end
+
+-- Handle GUI clicks
 function map_gui.on_gui_click(event)
     local element = event.element
     if not element or not element.valid then return end
@@ -956,6 +1457,15 @@ function map_gui.on_gui_click(event)
     if not player then return end
 
     log("[SE] GUI click on element: " .. element.name)
+
+    -- Handle extras menu clicks
+    if element.name == "close_extras_menu_btn" or 
+       element.name == "skip_extras_btn" or
+       element.name == "confirm_deploy_with_extras_btn" or
+       element.name == "back_to_deployment_btn" then
+        handle_extras_menu_clicks(event)
+        return
+    end
 
     -- Close deployment menu button
     if element.name == "close_deployment_menu_btn" then
