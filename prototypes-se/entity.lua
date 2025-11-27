@@ -65,6 +65,7 @@ data:extend({
       collision_box = {{-1.9, -1.9}, {1.9, 1.9}},
       selection_box = {{-2, -2}, {2, 2}},
       inventory_size_bonus = 1,
+      alert_icon_scale = 0,
       hatch_definitions =
       {
         cargo_hatch.shared_bay_hatch({-0.32, -1.5}, procession_graphic_catalogue_types.hatch_emission_bay)
