@@ -44,10 +44,26 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     end
     
     -- SE-SPECIFIC: Check if deployment target is a space zone (cannot deploy on orbit, asteroid-belt, or asteroid-field)
-    local is_on_space = is_on_space_surface(player.surface)
+    -- However, allow same-surface deployment (deploying from orbit to the same orbit surface)
+    local player_is_on_space = is_on_space_surface(player.surface)
+    local hub_is_on_space = is_on_space_surface(hub.surface)
     
-    if is_on_space then
-        return
+    -- Allow deployment if:
+    -- 1. Player is on a space surface AND hub is on the same space surface (same-surface deployment)
+    -- 2. Player is on a planet (deploying to planet)
+    -- Block deployment if:
+    -- 1. Player is on a space surface AND hub is on a different surface (shouldn't happen, but safety check)
+    if player_is_on_space then
+        if not hub_is_on_space then
+            -- Player on space but hub on different surface - shouldn't happen, but block it
+            return
+        end
+        -- Both are on space surfaces - check if they're the same surface
+        if player.surface ~= hub.surface then
+            -- Different space surfaces - block deployment
+            return
+        end
+        -- Same space surface - allow deployment (fall through to continue)
     end
     
     -- If extras are requested, verify they're available

@@ -105,14 +105,20 @@ This document summarizes the work done to port the Orbital Vehicle Deployment mo
 4. **Flashing Error**:
    - Flashing error needs fixing
 
-5. **Same Surface Launch Failure**:
-   - Doesn't launch if player is on the same surface - fails silently
+5. ✅ **Same Surface Launch Failure**: - **FIXED**
+   - ~~Doesn't launch if player is on the same surface - fails silently~~
+   - Fixed: Now allows same-surface deployment when player and hub are on the same space surface (orbit to orbit, asteroid-belt to asteroid-belt, etc.)
 
 6. **Space Vehicle Validation**:
-   - If in space - non space allowed vehicles shouldn't be allowed to land, and maybe greyed out in the list of vehicles?
+   - If in space - non space allowed vehicles shouldn't be allowed to land, and maybe greyed dout in the list of vehicles?
 
 7. **Cargo Bay Placement Restriction**:
    - Cargobays should only be placed on space tiles
+
+8. **Cargo Pod Launches at impossible Speed**
+   - Needs slowing down
+
+9. **On Robot mined it does not clear up the cargo bay entity**
 
 ## Remaining Work / TODO
 
