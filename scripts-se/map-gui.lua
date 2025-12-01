@@ -249,7 +249,7 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                     log("[SE] Final extracted vehicle name: " .. name)
                                     
                                     -- Try to get color info safely
-                                    local color = {r=1, g=0.5, b=0.0}  -- Default color
+                                    local color = nil  -- Only set if vehicle has a color
                                     pcall(function()
                                         if stack.entity_color then
                                             color = stack.entity_color
