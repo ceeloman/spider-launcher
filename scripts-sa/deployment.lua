@@ -3,6 +3,7 @@
 local deployment = {}
 
 -- Deploy a spider vehicle from orbit with optional extra items
+-- Deploy a spider vehicle from orbit with optional extra items
 function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, extras)
     -- Get necessary data from the vehicle
     local hub = vehicle_data.hub
@@ -11,39 +12,23 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     local vehicle_item_name = vehicle_data.vehicle_name
     local entity_name = vehicle_data.entity_name
     
-    -- Log deployment info
-    --[[
-    if extras and #extras > 0 then
-        log("Deploying " .. vehicle_data.name .. " with extras:")
-        for _, extra in ipairs(extras) do
-            log("  - " .. extra.name .. " x" .. extra.count)
-        end
-    else
-        log("Deploying " .. vehicle_data.name .. " without extras")
-    end
-    ]]
-    
     -- Verify the hub and inventory are still valid
     if not hub or not hub.valid then
-        ----player.print("Error: Hub is no longer valid")
         return
     end
     
     local inventory = hub.get_inventory(inv_type)
     if not inventory then
-        ----player.print("Error: Inventory not found")
         return
     end
     
     local stack = inventory[inventory_slot]
     if not stack or not stack.valid_for_read or stack.name ~= vehicle_item_name then
-        ----player.print("Error: Vehicle is no longer in the specified slot")
         return
     end
     
     -- Check if deployment target is a platform
     if player.surface.name:find("platform") then
-        ----player.print("Error: Cannot deploy vehicles on platforms")
         return
     end
     
@@ -56,7 +41,6 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
         -- Only use the chest inventory to avoid duplicates
         local hub_inv = hub.get_inventory(defines.inventory.chest)
         if not hub_inv then
-            ----player.print("Error: Could not access hub inventory")
             return
         end
         
@@ -109,8 +93,6 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
         
         -- If items are unavailable, notify the player
         if not extras_available then
-            local message = "Cannot deploy with requested items. Unavailable:"
-            ----player.print(message)
             return
         end
     end
@@ -130,7 +112,6 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                 if equipment.quality then
                     equipment_quality = equipment.quality
                     equipment_quality_name = equipment.quality.name
-                    log("Equipment " .. equipment.name .. " has quality: " .. equipment_quality_name)
                 end
             end)
             
@@ -143,7 +124,6 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                 quality_name = equipment_quality_name
             })
         end
-        log("Stored grid data with " .. #grid_data .. " equipment items")
     end
     
     -- Store quality name
@@ -151,7 +131,6 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     pcall(function()
         if stack.quality then
             quality_name = stack.quality.name
-            log("Deploying vehicle with quality name: " .. quality_name)
         end
     end)
     
@@ -162,10 +141,7 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     local chunk_y = math.floor(landing_pos.y / 32)
 
     if not player.surface.is_chunk_generated({x = chunk_x, y = chunk_y}) then
-        -- Decide what to do: either generate or abort
-        ----player.print("Target area not yet explored. Mapping landing zone...")
-        
-        --Generate the chunk
+        -- Generate the chunk
         player.surface.request_to_generate_chunks(landing_pos, 1)
         player.surface.force_generate_chunk_requests()
     end
@@ -183,28 +159,24 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
         -- Deploy to map target
         landing_pos.x = player.position.x + math.random(-5, 5)
         landing_pos.y = player.position.y + math.random(-5, 5)
-        log("Using map target position: " .. landing_pos.x .. ", " .. landing_pos.y)
     elseif deploy_target == "player" and player.character then
         -- Deploy to player character
         landing_pos.x = player.character.position.x + math.random(-5, 5)
         landing_pos.y = player.character.position.y + math.random(-5, 5)
-        log("Using player position: " .. landing_pos.x .. ", " .. landing_pos.y)
     else
         -- Fallback to current position
         if player.character then
             landing_pos.x = player.character.position.x + math.random(-5, 5)
             landing_pos.y = player.character.position.y + math.random(-5, 5)
-            log("Fallback to character position: " .. landing_pos.x .. ", " .. landing_pos.y)
         else
             landing_pos.x = player.position.x + math.random(-5, 5)
             landing_pos.y = player.position.y + math.random(-5, 5)
-            log("Fallback to cursor position: " .. landing_pos.x .. ", " .. landing_pos.y)
         end
     end
 
     -- Check surrounding area to find a valid non-fluid (walkable) tile
     local valid_positions = {}
-    local radius = 5  -- Check a 5x5 area around the landing position
+    local radius = 5
     for dx = -radius, radius do
         for dy = -radius, radius do
             local check_pos = {x = landing_pos.x + dx, y = landing_pos.y + dy}
@@ -218,135 +190,119 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     if #valid_positions > 0 then
         local random_index = math.random(1, #valid_positions)
         landing_pos = valid_positions[random_index]
-        log("Selected valid landing position: " .. landing_pos.x .. ", " .. landing_pos.y)
     else
         -- No valid tiles found, exit
-        --player.print("Drop pod can't deploy here! Try over solid ground.")
         return
     end
 
- -- Define the delay before the target appears
-local delay_ticks = 60 * 9  -- 9 seconds delay
-local starting_tick = game.tick
+    -- Define the delay before the target appears
+    local delay_ticks = 60 * 9
+    local starting_tick = game.tick
 
--- Wait for 9 seconds before starting the light sequence
-local sequence_start = starting_tick + delay_ticks  -- This is when the sequence begins
-local total_animation_ticks = 60 * 8.5  -- 8.5 seconds total animation duration
-local grow_duration_ticks = 60 * 7  -- 7 seconds grow duration
-local shrink_duration_ticks = total_animation_ticks - grow_duration_ticks  -- 1.5 seconds for shrinking
+    -- Wait for 9 seconds before starting the light sequence
+    local sequence_start = starting_tick + delay_ticks
+    local total_animation_ticks = 60 * 8.5
+    local grow_duration_ticks = 60 * 7
+    local shrink_duration_ticks = total_animation_ticks - grow_duration_ticks
 
--- Grow phase - gradually increase size over 7 seconds
--- High frequency animation with smooth steps
-for i = 0, 84 do  -- 85 steps over 7 seconds (5 ticks between steps)
-    script.on_nth_tick(sequence_start + (i * 5), function(event)
-        if not player.valid then return end
-        
-        -- Size grows during first phase - from 0.3 to 1.5
-        local progress = i / 84  -- Normalized progress (0 to 1)
-        local scale_factor = 0.3 + (progress * 1.2)  -- Grow from 0.3 to 1.5
-        local intensity_factor = 0.3 + (progress * 0.4)  -- Grow intensity from 0.3 to 0.7
-        
-        -- Draw dark background circle only during daytime
-        if player.surface.darkness < 0.3 then
-            rendering.draw_sprite{
-                sprite = "utility/entity_info_dark_background",
-                x_scale = scale_factor * 1.2,
-                y_scale = scale_factor * 1.2,
-                tint = {r = 1, g = 1, b = 1, a = 0.7},
-                render_layer = "ground-patch",
+    -- Grow phase - gradually increase size over 7 seconds
+    for i = 0, 84 do
+        script.on_nth_tick(sequence_start + (i * 5), function(event)
+            if not player.valid then return end
+            
+            local progress = i / 84
+            local scale_factor = 0.3 + (progress * 1.2)
+            local intensity_factor = 0.3 + (progress * 0.4)
+            
+            if player.surface.darkness < 0.3 then
+                rendering.draw_sprite{
+                    sprite = "utility/entity_info_dark_background",
+                    x_scale = scale_factor * 1.2,
+                    y_scale = scale_factor * 1.2,
+                    tint = {r = 1, g = 1, b = 1, a = 0.7},
+                    render_layer = "ground-patch",
+                    target = {x = landing_pos.x, y = landing_pos.y},
+                    surface = player.surface,
+                    time_to_live = 15
+                }
+            end
+            
+            rendering.draw_light{
+                sprite = "utility/light_small",
+                scale = scale_factor,
+                intensity = intensity_factor,
+                minimum_darkness = 0,
+                color = {r = 1, g = 0.1, b = 0.1},
                 target = {x = landing_pos.x, y = landing_pos.y},
                 surface = player.surface,
                 time_to_live = 15
             }
-        end
-        
-        -- Always add light effects since Vulcanus is dark
-        rendering.draw_light{
-            sprite = "utility/light_small",
-            scale = scale_factor,
-            intensity = intensity_factor,
-            minimum_darkness = 0,
-            color = {r = 1, g = 0.1, b = 0.1},
-            target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
-            time_to_live = 15
-        }
-        
-        -- Outer glow light
-        rendering.draw_light{
-            sprite = "utility/light_small",
-            scale = scale_factor * 1.3,
-            intensity = intensity_factor * 0.7,
-            minimum_darkness = 0,
-            color = {r = 1, g = 0.3, b = 0.1},
-            target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
-            time_to_live = 15
-        }
-    end)
-end
-
--- Shrinking phase - starts 7 seconds after the sequence begins
-local shrink_start = sequence_start + grow_duration_ticks
-
--- Shrink phase - sharper decrease in size over 1.5 seconds
-for i = 0, 18 do  -- 19 steps over 1.5 seconds (5 ticks between steps)
-    script.on_nth_tick(shrink_start + (i * 5), function(event)
-        if not player.valid then return end
-        
-        -- Sharper size reduction - from 1.5 down to 0.3
-        local progress = i / 18  -- Normalized progress (0 to 1)
-        local scale_factor = 1.5 - (progress * 1.2)  -- Shrink from 1.5 to 0.3
-        -- Intensity decreases as we near the end
-        local intensity_factor = 0.7 - (progress * 0.4)  -- Decrease from 0.7 to 0.3
-        
-        -- Draw dark background only during daytime
-        if player.surface.darkness < 0.3 then
-            rendering.draw_sprite{
-                sprite = "utility/entity_info_dark_background",
-                x_scale = scale_factor * 1.2,
-                y_scale = scale_factor * 1.2,
-                tint = {r = 1, g = 1, b = 1, a = 0.7},
-                render_layer = "ground-patch",
+            
+            rendering.draw_light{
+                sprite = "utility/light_small",
+                scale = scale_factor * 1.3,
+                intensity = intensity_factor * 0.7,
+                minimum_darkness = 0,
+                color = {r = 1, g = 0.3, b = 0.1},
                 target = {x = landing_pos.x, y = landing_pos.y},
                 surface = player.surface,
                 time_to_live = 15
             }
-        end
-        
-        -- Always add light effects
-        rendering.draw_light{
-            sprite = "utility/light_small",
-            scale = scale_factor,
-            intensity = intensity_factor,
-            minimum_darkness = 0,
-            color = {r = 1, g = 0.1, b = 0.1},
-            target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
-            time_to_live = 15
-        }
-        
-        -- Outer glow
-        rendering.draw_light{
-            sprite = "utility/light_small",
-            scale = scale_factor * 1.3,
-            intensity = intensity_factor * 0.8,
-            minimum_darkness = 0,
-            color = {r = 1, g = 0.3, b = 0.1},
-            target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
-            time_to_live = 15
-        }
-    end)
-end
+        end)
+    end
+
+    -- Shrinking phase
+    local shrink_start = sequence_start + grow_duration_ticks
+
+    for i = 0, 18 do
+        script.on_nth_tick(shrink_start + (i * 5), function(event)
+            if not player.valid then return end
+            
+            local progress = i / 18
+            local scale_factor = 1.5 - (progress * 1.2)
+            local intensity_factor = 0.7 - (progress * 0.4)
+            
+            if player.surface.darkness < 0.3 then
+                rendering.draw_sprite{
+                    sprite = "utility/entity_info_dark_background",
+                    x_scale = scale_factor * 1.2,
+                    y_scale = scale_factor * 1.2,
+                    tint = {r = 1, g = 1, b = 1, a = 0.7},
+                    render_layer = "ground-patch",
+                    target = {x = landing_pos.x, y = landing_pos.y},
+                    surface = player.surface,
+                    time_to_live = 15
+                }
+            end
+            
+            rendering.draw_light{
+                sprite = "utility/light_small",
+                scale = scale_factor,
+                intensity = intensity_factor,
+                minimum_darkness = 0,
+                color = {r = 1, g = 0.1, b = 0.1},
+                target = {x = landing_pos.x, y = landing_pos.y},
+                surface = player.surface,
+                time_to_live = 15
+            }
+            
+            rendering.draw_light{
+                sprite = "utility/light_small",
+                scale = scale_factor * 1.3,
+                intensity = intensity_factor * 0.8,
+                minimum_darkness = 0,
+                color = {r = 1, g = 0.3, b = 0.1},
+                target = {x = landing_pos.x, y = landing_pos.y},
+                surface = player.surface,
+                time_to_live = 15
+            }
+        end)
+    end
     
     -- Store quality itself directly instead of just the name
     local quality = nil
     pcall(function() 
         quality = stack.quality 
-        if quality then
-            log("Captured actual quality object with name: " .. quality.name)
-        end
     end)
     
     -- Remove the vehicle from the hub inventory
@@ -355,10 +311,8 @@ end
     -- If extras were requested, collect them with their qualities preserved
     local collected_extras = {}
     if extras and #extras > 0 then
-        -- Use chest inventory since that's where we found the items
         local hub_inv = hub.get_inventory(defines.inventory.chest)
         if hub_inv then
-            -- Organize extras by name and quality for easier searching
             local extras_by_key = {}
             for _, extra in ipairs(extras) do
                 local key = extra.name .. ":" .. (extra.quality or "Normal")
@@ -372,11 +326,9 @@ end
                 extras_by_key[key].count = extras_by_key[key].count + extra.count
             end
             
-            -- Process each stack in the inventory
             for i = 1, #hub_inv do
                 local stack = hub_inv[i]
                 if stack and stack.valid_for_read then
-                    -- Get the quality of this stack
                     local stack_quality = "Normal"
                     pcall(function()
                         if stack.quality then
@@ -384,29 +336,19 @@ end
                         end
                     end)
                     
-                    -- Check if this matches any requested extras
                     local key = stack.name .. ":" .. stack_quality
                     if extras_by_key[key] and extras_by_key[key].count > 0 then
-                        -- Calculate how many to take from this stack
                         local to_take = math.min(stack.count, extras_by_key[key].count)
                         
-                        -- Create a copy of this stack to preserve its quality
                         local collected_stack = {
                             name = stack.name,
                             count = to_take,
                             quality = stack_quality
                         }
                         
-                        -- Remember we collected this stack
                         table.insert(collected_extras, collected_stack)
-                        
-                        -- Remove the items from the hub
                         stack.count = stack.count - to_take
-                        
-                        -- Update how many we still need
                         extras_by_key[key].count = extras_by_key[key].count - to_take
-                        
-                        --log("Collected " .. to_take .. " " .. stack_quality .. " " .. stack.name)
                     end
                 end
             end
@@ -422,45 +364,65 @@ end
     if success and result and result.valid then
         cargo_pod = result
         
-        -- Set cargo pod destination to the player's surface at the random location
+        -- NEW: Detect same-surface deployment and use surface-switching trick
+        local actual_surface = player.surface
+        local actual_position = landing_pos
+        local is_same_surface = (player.surface == hub.surface)
+        local temp_destination_surface = actual_surface
+        
+        if is_same_surface then
+            -- Same surface deployment - temporarily target a different surface
+            local nauvis = game.surfaces["nauvis"]
+            if nauvis and nauvis ~= actual_surface then
+                temp_destination_surface = nauvis
+            else
+                -- Find any other surface
+                for _, surface in pairs(game.surfaces) do
+                    if surface ~= actual_surface then
+                        temp_destination_surface = surface
+                        break
+                    end
+                end
+            end
+        end
+        
+        -- Set cargo pod destination
         cargo_pod.cargo_pod_destination = {
             type = defines.cargo_destination.surface,
-            surface = player.surface,
-            position = landing_pos,
+            surface = temp_destination_surface,
+            position = actual_position,
             land_at_exact_position = true
         }
         
         -- Set cargo pod origin to the hub
         cargo_pod.cargo_pod_origin = hub
         
-        -- Save all the deployment information for when the pod lands
+        -- Save all the deployment information
         if not storage.pending_pod_deployments then
             storage.pending_pod_deployments = {}
         end
         
-        -- Generate a unique ID for this pod
         local pod_id = player.index .. "_" .. game.tick
         
-        -- Save the pod deployment information
         storage.pending_pod_deployments[pod_id] = {
             pod = cargo_pod,
             vehicle_name = vehicle_data.name,
             vehicle_color = vehicle_data.color,
             has_grid = has_grid,
             grid_data = grid_data,
-            quality = quality,  -- Store the actual quality object
-            quality_name = quality_name,  -- Also store the name as backup
+            quality = quality,
+            quality_name = quality_name,
             player = player,
-            entity_name = entity_name,  -- The actual entity name to create
-            item_name = vehicle_item_name,  -- The item name
-            extras = collected_extras  -- Store the extra items to deploy (with qualities)
+            entity_name = entity_name,
+            item_name = vehicle_item_name,
+            extras = collected_extras,
+            -- NEW: Store actual destination for same-surface deployments
+            actual_surface = is_same_surface and actual_surface or nil,
+            actual_position = is_same_surface and actual_position or nil
         }
         
         return
     end
-    
-    -- If cargo pod creation fails, notify the player and abort
-    ----player.print("Error: Could not create cargo pod from hub. Deployment aborted.")
 end
 
 local function get_ammo_damage(ammo_name)
@@ -539,6 +501,11 @@ function deployment.on_cargo_pod_finished_descending(event)
     if storage.pending_pod_deployments then
         for pod_id, deployment_data in pairs(storage.pending_pod_deployments) do
             if deployment_data.pod == pod then
+
+                if deployment_data.actual_surface and deployment_data.actual_position then
+                    pod.teleport(deployment_data.actual_position, deployment_data.actual_surface)
+                end
+                
                 -- Get the deployment information
                 local player = deployment_data.player
                 local vehicle_name = deployment_data.vehicle_name

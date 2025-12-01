@@ -466,3 +466,41 @@ script.on_nth_tick(300, function()  -- Check every 5 seconds
 end)
 
 debug_log("Space Exploration control script loaded")
+
+-- In control.lua on_init, after init_storage()
+
+-- Create planet for SE surfaces if it doesn't exist
+script.on_init(function()
+    init_storage()
+    init_players()
+    
+    -- Try to create planet from our space-location
+    if prototypes.space_location["ovd-se-generic"] then
+        local planet = game.planets["ovd-se-generic"]
+        if not planet then
+            log("[OVD] Attempting to create planet from ovd-se-generic space-location")
+            -- Planets are created automatically when a space location is discovered
+            -- Try creating a dummy surface first, then we can associate SE surfaces later
+            local success, result = pcall(function()
+                local temp_surface = game.create_surface("ovd-temp-planet-surface", {})
+                local proto = prototypes.space_location["ovd-se-generic"]
+                if proto then
+                    -- This might create the planet
+                    return game.planets["ovd-se-generic"]
+                end
+            end)
+            
+            if success and result then
+                log("[OVD] Planet created successfully")
+            else
+                log("[OVD] Could not create planet: " .. tostring(result))
+            end
+        end
+    end
+    
+    -- Rest of your init code
+    for _, player in pairs(game.players) do
+        map_gui.initialize_player_shortcuts(player)
+    end
+    vehicles_list.initialize()
+end)
