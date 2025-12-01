@@ -2,6 +2,7 @@
 local map_gui = require("scripts-sa.map-gui")
 local deployment = require("scripts-sa.deployment")
 local vehicles_list = require("scripts-sa.vehicles-list")
+local api = require("scripts-sa.api")
 
 -- Debug logging function
 local function debug_log(message)
@@ -19,24 +20,65 @@ end
 
 -- Initialize player shortcuts
 local function init_players()
+    -- Initialize vehicles list to check for spider-vehicle types
+    vehicles_list.initialize()
+    local has_spider_vehicles = #vehicles_list.spider_vehicles > 0
+    
+    -- Check if TFMG mod is active
+    local is_tfmg_active = script.active_mods["TFMG"] ~= nil or script.active_mods["tfmg"] ~= nil
+    
     for _, player in pairs(game.players) do
-        -- Enable the shortcut based on research
-        local any_spider_researched = player.force.technologies["spidertron"].researched
-        
-        -- Also check for modded spidertrons
-        for tech_name, tech in pairs(player.force.technologies) do
-            if tech.researched and (
-                tech_name:find("spider") or 
-                tech_name:find("spidertron") or 
-                tech_name:find("spiderdrone") or
-                tech_name:find("spiderbot")
-            ) then
-                any_spider_researched = true
-                break
-            end
+        -- Determine if on a platform surface
+        -- Check if the surface has a platform property (more reliable than name matching)
+        local is_on_platform = false
+        if player.surface.platform then
+            is_on_platform = true
+        elseif player.surface.name:find("platform") then
+            is_on_platform = true
         end
         
-        if any_spider_researched and not player.surface.name:find("platform") then
+        -- Determine if shortcut should be enabled
+        local should_enable = false
+        
+        if is_tfmg_active then
+            -- If TFMG is active, enable from start (scout-o-trons are in starting inventory)
+            -- Also check for scout-o-tron technology as a fallback
+            local scout_tech = player.force.technologies["scout-o-tron"]
+            if scout_tech and scout_tech.researched then
+                should_enable = true
+            elseif not has_spider_vehicles then
+                -- If no spider-vehicle types exist, unlock from start
+                should_enable = true
+            else
+                -- TFMG is active, enable from start
+                should_enable = true
+            end
+        elseif not has_spider_vehicles then
+            -- If no spider-vehicle types exist, unlock from start
+            should_enable = true
+        else
+            -- Check for spider-related technologies
+            local spidertron_tech = player.force.technologies["spidertron"]
+            local any_spider_researched = (spidertron_tech and spidertron_tech.researched) or false
+            
+            -- Also check for modded spidertrons
+            for tech_name, tech in pairs(player.force.technologies) do
+                if tech.researched and (
+                    tech_name:find("spider") or 
+                    tech_name:find("spidertron") or 
+                    tech_name:find("spiderdrone") or
+                    tech_name:find("spiderbot")
+                ) then
+                    any_spider_researched = true
+                    break
+                end
+            end
+            
+            should_enable = any_spider_researched
+        end
+        
+        -- Enable shortcut if conditions are met AND not on platform
+        if should_enable and not is_on_platform then
             player.set_shortcut_available("orbital-spidertron-deploy", true)
         else
             player.set_shortcut_available("orbital-spidertron-deploy", false)
@@ -290,8 +332,20 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         local player = game.get_player(event.player_index)
         if not player then return end
         
-        -- Find orbital spider vehicles
-        local vehicles = map_gui.find_orbital_vehicles(player.surface)
+        
+        -- Check if player is on a platform surface - can't deploy vehicles to platforms
+        if player.surface.platform then
+            player.print("Cannot deploy vehicles to a platform surface.")
+            return
+        end
+        
+        -- Determine which surface to check for vehicles
+        -- In map mode, player.surface is the surface being viewed (the planet)
+        -- We want to find platforms orbiting this planet
+        local target_surface = player.surface
+        -- Find orbital spider vehicles on platforms orbiting this planet
+        local vehicles = map_gui.find_orbital_vehicles(target_surface, player)
+        
         if #vehicles == 0 then
             player.print("No vehicles are deployable to this surface.")
             return

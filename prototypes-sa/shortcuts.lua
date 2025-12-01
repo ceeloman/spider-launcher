@@ -10,4 +10,9 @@ local orbital_spidertron_shortcut = {
     technology_to_unlock = "space-platform"
 }
 
+-- TFMG compatibility: Remove technology unlock requirement if TFMG mod is active
+if mods["TFMG"] or mods["tfmg"] then
+    orbital_spidertron_shortcut.technology_to_unlock = nil
+end
+
 data:extend({orbital_spidertron_shortcut})

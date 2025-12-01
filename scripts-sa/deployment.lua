@@ -3,52 +3,58 @@
 local deployment = {}
 
 -- Deploy a spider vehicle from orbit with optional extra items
-function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, extras)
+-- Parameters:
+--   player: Player entity
+--   vehicle_data: Vehicle data table
+--   deploy_target: Deployment target ("target" or "player")
+--   extras: Optional extras items to deploy
+--   defaults: Optional defaults table with equipment_grid and trunk_items
+function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, extras, defaults)
     -- Get necessary data from the vehicle
     local hub = vehicle_data.hub
     local inv_type = vehicle_data.inv_type
     local inventory_slot = vehicle_data.inventory_slot
-    local vehicle_item_name = vehicle_data.vehicle_name
+    -- Use deploy_item if available (from requirements), otherwise use vehicle_name
+    local deploy_item_name = vehicle_data.deploy_item or vehicle_data.vehicle_name
+    local vehicle_item_name = vehicle_data.vehicle_name  -- The actual vehicle item to put in pod
     local entity_name = vehicle_data.entity_name
     
-    -- Log deployment info
-    --[[
-    if extras and #extras > 0 then
-        log("Deploying " .. vehicle_data.name .. " with extras:")
-        for _, extra in ipairs(extras) do
-            log("  - " .. extra.name .. " x" .. extra.count)
+    -- Check vehicle requirements if registered (via remote interface to avoid circular dependency)
+    if remote.interfaces["spider-launcher"] and remote.interfaces["spider-launcher"]["check_vehicle_requirements"] then
+        local req_check, req_result = remote.call("spider-launcher", "check_vehicle_requirements", vehicle_data.vehicle_name, hub)
+        if req_check == false then
+            player.print("Cannot deploy: " .. tostring(req_result))
+            return
         end
-    else
-        log("Deploying " .. vehicle_data.name .. " without extras")
     end
-    ]]
     
     -- Verify the hub and inventory are still valid
     if not hub or not hub.valid then
-        ----player.print("Error: Hub is no longer valid")
         return
     end
     
     local inventory = hub.get_inventory(inv_type)
     if not inventory then
-        ----player.print("Error: Inventory not found")
         return
     end
     
     local stack = inventory[inventory_slot]
-    if not stack or not stack.valid_for_read or stack.name ~= vehicle_item_name then
-        ----player.print("Error: Vehicle is no longer in the specified slot")
+    if not stack or not stack.valid_for_read then
         return
     end
     
-    -- Check if deployment target is a platform
-    if player.surface.name:find("platform") then
-        ----player.print("Error: Cannot deploy vehicles on platforms")
+    if stack.name ~= vehicle_item_name then
         return
     end
     
-    -- If extras are requested, verify they're available
-    if extras and #extras > 0 then
+    -- Check if deployment target is a platform (skip this check for API calls)
+    if not vehicle_data.api_target_surface and player.surface.name:find("platform") then
+        return
+    end
+    
+    -- If extras are requested, verify they're available (skip check for API calls - items are in pod recipe)
+    -- Skip extras availability check if using API (items are built into the pod, not separate)
+    if extras and #extras > 0 and not vehicle_data.api_config then
         -- Check if the hub has the requested extra items with correct qualities
         local extras_available = true
         local unavailable_items = {}
@@ -56,7 +62,6 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
         -- Only use the chest inventory to avoid duplicates
         local hub_inv = hub.get_inventory(defines.inventory.chest)
         if not hub_inv then
-            ----player.print("Error: Could not access hub inventory")
             return
         end
         
@@ -110,7 +115,10 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
         -- If items are unavailable, notify the player
         if not extras_available then
             local message = "Cannot deploy with requested items. Unavailable:"
-            ----player.print(message)
+            player.print(message)
+            for _, item in ipairs(unavailable_items) do
+                player.print("  - " .. item.name .. " (" .. item.quality .. "): need " .. item.requested .. ", have " .. item.available)
+            end
             return
         end
     end
@@ -130,7 +138,6 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                 if equipment.quality then
                     equipment_quality = equipment.quality
                     equipment_quality_name = equipment.quality.name
-                    log("Equipment " .. equipment.name .. " has quality: " .. equipment_quality_name)
                 end
             end)
             
@@ -143,7 +150,25 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                 quality_name = equipment_quality_name
             })
         end
-        log("Stored grid data with " .. #grid_data .. " equipment items")
+    end
+    
+    -- Merge defaults equipment_grid into grid_data if provided
+    if defaults and defaults.equipment_grid and #defaults.equipment_grid > 0 then
+        for _, equip_config in ipairs(defaults.equipment_grid) do
+            local count = equip_config.count or 1
+            for i = 1, count do
+                table.insert(grid_data, {
+                    name = equip_config.name,
+                    position = nil,  -- Let grid.put find a position
+                    energy = equip_config.energy or nil
+                })
+            end
+        end
+        has_grid = true  -- Mark as having grid if we added equipment
+        -- Ensure grid_data is not empty
+        if #grid_data > 0 then
+            has_grid = true
+        end
     end
     
     -- Store quality name
@@ -151,55 +176,55 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     pcall(function()
         if stack.quality then
             quality_name = stack.quality.name
-            log("Deploying vehicle with quality name: " .. quality_name)
         end
     end)
     
+    -- Determine target surface (use API target if available, otherwise player surface)
+    local target_surface = vehicle_data.api_target_surface or player.surface
+    
     -- Define landing position
     local landing_pos = {x = 0, y = 0}
+    
+    -- Use API target position if available
+    if vehicle_data.api_target_position then
+        landing_pos = {x = vehicle_data.api_target_position.x, y = vehicle_data.api_target_position.y}
+    else
+        -- Get landing position based on deploy_target
+        if deploy_target == "target" and 
+           (player.render_mode == defines.render_mode.chart or
+            player.render_mode == defines.render_mode.chart_zoomed_in) then
+            -- Deploy to map target
+            landing_pos.x = player.position.x + math.random(-5, 5)
+            landing_pos.y = player.position.y + math.random(-5, 5)
+        elseif deploy_target == "player" and player.character then
+            -- Deploy to player character
+            landing_pos.x = player.character.position.x + math.random(-5, 5)
+            landing_pos.y = player.character.position.y + math.random(-5, 5)
+        else
+            -- Fallback to current position
+            if player.character then
+                landing_pos.x = player.character.position.x + math.random(-5, 5)
+                landing_pos.y = player.character.position.y + math.random(-5, 5)
+            else
+                landing_pos.x = player.position.x + math.random(-5, 5)
+                landing_pos.y = player.position.y + math.random(-5, 5)
+            end
+        end
+    end
 
     local chunk_x = math.floor(landing_pos.x / 32)
     local chunk_y = math.floor(landing_pos.y / 32)
 
-    if not player.surface.is_chunk_generated({x = chunk_x, y = chunk_y}) then
-        -- Decide what to do: either generate or abort
-        ----player.print("Target area not yet explored. Mapping landing zone...")
-        
+    if not target_surface.is_chunk_generated({x = chunk_x, y = chunk_y}) then
         --Generate the chunk
-        player.surface.request_to_generate_chunks(landing_pos, 1)
-        player.surface.force_generate_chunk_requests()
-    end
-    
-    -- Helper function to check if a tile is walkable (non-fluid)
-    local function is_walkable_tile(position)
-        local tile = player.surface.get_tile(position.x, position.y)
-        return tile and tile.valid and not tile.prototype.fluid
+        target_surface.request_to_generate_chunks(landing_pos, 1)
+        target_surface.force_generate_chunk_requests()
     end
 
-    -- Get landing position based on deploy_target
-    if deploy_target == "target" and 
-       (player.render_mode == defines.render_mode.chart or
-        player.render_mode == defines.render_mode.chart_zoomed_in) then
-        -- Deploy to map target
-        landing_pos.x = player.position.x + math.random(-5, 5)
-        landing_pos.y = player.position.y + math.random(-5, 5)
-        log("Using map target position: " .. landing_pos.x .. ", " .. landing_pos.y)
-    elseif deploy_target == "player" and player.character then
-        -- Deploy to player character
-        landing_pos.x = player.character.position.x + math.random(-5, 5)
-        landing_pos.y = player.character.position.y + math.random(-5, 5)
-        log("Using player position: " .. landing_pos.x .. ", " .. landing_pos.y)
-    else
-        -- Fallback to current position
-        if player.character then
-            landing_pos.x = player.character.position.x + math.random(-5, 5)
-            landing_pos.y = player.character.position.y + math.random(-5, 5)
-            log("Fallback to character position: " .. landing_pos.x .. ", " .. landing_pos.y)
-        else
-            landing_pos.x = player.position.x + math.random(-5, 5)
-            landing_pos.y = player.position.y + math.random(-5, 5)
-            log("Fallback to cursor position: " .. landing_pos.x .. ", " .. landing_pos.y)
-        end
+    -- Helper function to check if a tile is walkable (non-fluid)
+    local function is_walkable_tile(position)
+        local tile = target_surface.get_tile(position.x, position.y)
+        return tile and tile.valid and not tile.prototype.fluid
     end
 
     -- Check surrounding area to find a valid non-fluid (walkable) tile
@@ -218,13 +243,13 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     if #valid_positions > 0 then
         local random_index = math.random(1, #valid_positions)
         landing_pos = valid_positions[random_index]
-        log("Selected valid landing position: " .. landing_pos.x .. ", " .. landing_pos.y)
     else
         -- No valid tiles found, exit
         --player.print("Drop pod can't deploy here! Try over solid ground.")
         return
     end
 
+--[[
  -- Define the delay before the target appears
 local delay_ticks = 60 * 9  -- 9 seconds delay
 local starting_tick = game.tick
@@ -247,7 +272,7 @@ for i = 0, 84 do  -- 85 steps over 7 seconds (5 ticks between steps)
         local intensity_factor = 0.3 + (progress * 0.4)  -- Grow intensity from 0.3 to 0.7
         
         -- Draw dark background circle only during daytime
-        if player.surface.darkness < 0.3 then
+        if target_surface.darkness < 0.3 then
             rendering.draw_sprite{
                 sprite = "utility/entity_info_dark_background",
                 x_scale = scale_factor * 1.2,
@@ -255,7 +280,7 @@ for i = 0, 84 do  -- 85 steps over 7 seconds (5 ticks between steps)
                 tint = {r = 1, g = 1, b = 1, a = 0.7},
                 render_layer = "ground-patch",
                 target = {x = landing_pos.x, y = landing_pos.y},
-                surface = player.surface,
+                surface = target_surface,
                 time_to_live = 15
             }
         end
@@ -268,7 +293,7 @@ for i = 0, 84 do  -- 85 steps over 7 seconds (5 ticks between steps)
             minimum_darkness = 0,
             color = {r = 1, g = 0.1, b = 0.1},
             target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
+            surface = target_surface,
             time_to_live = 15
         }
         
@@ -280,7 +305,7 @@ for i = 0, 84 do  -- 85 steps over 7 seconds (5 ticks between steps)
             minimum_darkness = 0,
             color = {r = 1, g = 0.3, b = 0.1},
             target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
+            surface = target_surface,
             time_to_live = 15
         }
     end)
@@ -301,7 +326,7 @@ for i = 0, 18 do  -- 19 steps over 1.5 seconds (5 ticks between steps)
         local intensity_factor = 0.7 - (progress * 0.4)  -- Decrease from 0.7 to 0.3
         
         -- Draw dark background only during daytime
-        if player.surface.darkness < 0.3 then
+        if target_surface.darkness < 0.3 then
             rendering.draw_sprite{
                 sprite = "utility/entity_info_dark_background",
                 x_scale = scale_factor * 1.2,
@@ -309,7 +334,7 @@ for i = 0, 18 do  -- 19 steps over 1.5 seconds (5 ticks between steps)
                 tint = {r = 1, g = 1, b = 1, a = 0.7},
                 render_layer = "ground-patch",
                 target = {x = landing_pos.x, y = landing_pos.y},
-                surface = player.surface,
+                surface = target_surface,
                 time_to_live = 15
             }
         end
@@ -322,7 +347,7 @@ for i = 0, 18 do  -- 19 steps over 1.5 seconds (5 ticks between steps)
             minimum_darkness = 0,
             color = {r = 1, g = 0.1, b = 0.1},
             target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
+            surface = target_surface,
             time_to_live = 15
         }
         
@@ -334,27 +359,50 @@ for i = 0, 18 do  -- 19 steps over 1.5 seconds (5 ticks between steps)
             minimum_darkness = 0,
             color = {r = 1, g = 0.3, b = 0.1},
             target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
+            surface = target_surface,
             time_to_live = 15
         }
     end)
 end
+--]]
     
     -- Store quality itself directly instead of just the name
     local quality = nil
     pcall(function() 
         quality = stack.quality 
         if quality then
-            log("Captured actual quality object with name: " .. quality.name)
         end
     end)
     
     -- Remove the vehicle from the hub inventory
     stack.count = stack.count - 1
     
+    -- TFMG compatibility: If deploying scout-o-tron-pod, also remove scout-o-tron
+    -- If deploying scout-o-tron, also remove scout-o-tron-pod
+    if vehicle_item_name == "scout-o-tron-pod" then
+        -- Remove scout-o-tron if it exists
+        for i = 1, #inventory do
+            local other_stack = inventory[i]
+            if other_stack.valid_for_read and other_stack.name == "scout-o-tron" then
+                other_stack.count = other_stack.count - 1
+                break
+            end
+        end
+    elseif vehicle_item_name == "scout-o-tron" then
+        -- Remove scout-o-tron-pod if it exists
+        for i = 1, #inventory do
+            local other_stack = inventory[i]
+            if other_stack.valid_for_read and other_stack.name == "scout-o-tron-pod" then
+                other_stack.count = other_stack.count - 1
+                break
+            end
+        end
+    end
+    
     -- If extras were requested, collect them with their qualities preserved
+    -- Skip collection for API calls - items are in pod recipe, not separate inventory items
     local collected_extras = {}
-    if extras and #extras > 0 then
+    if extras and #extras > 0 and not vehicle_data.api_config then
         -- Use chest inventory since that's where we found the items
         local hub_inv = hub.get_inventory(defines.inventory.chest)
         if hub_inv then
@@ -365,7 +413,7 @@ end
                 if not extras_by_key[key] then
                     extras_by_key[key] = {
                         name = extra.name,
-                        quality = extra.quality or "Normal",
+                        quality = extra.quality,  -- Don't set default, let it be nil if not specified
                         count = 0
                     }
                 end
@@ -411,6 +459,20 @@ end
                 end
             end
         end
+    elseif extras and #extras > 0 and vehicle_data.api_config then
+        -- For API calls, use extras directly (they're in pod recipe, not separate items)
+        collected_extras = extras
+    end
+    
+    -- Merge defaults trunk_items into collected_extras if provided
+    if defaults and defaults.trunk_items and #defaults.trunk_items > 0 then
+        for _, item_config in ipairs(defaults.trunk_items) do
+            table.insert(collected_extras, {
+                name = item_config.name,
+                count = item_config.count or 1,
+                quality = item_config.quality  -- Don't set default, let it be nil if not specified
+            })
+        end
     end
     
     -- Try to use a cargo pod
@@ -419,51 +481,108 @@ end
         return hub.create_cargo_pod()
     end)
     
-    if success and result and result.valid then
-        cargo_pod = result
-        
-        -- Set cargo pod destination to the player's surface at the random location
-        cargo_pod.cargo_pod_destination = {
-            type = defines.cargo_destination.surface,
-            surface = player.surface,
-            position = landing_pos,
-            land_at_exact_position = true
-        }
-        
-        -- Set cargo pod origin to the hub
-        cargo_pod.cargo_pod_origin = hub
-        
-        -- Save all the deployment information for when the pod lands
-        if not storage.pending_pod_deployments then
-            storage.pending_pod_deployments = {}
-        end
-        
-        -- Generate a unique ID for this pod
-        local pod_id = player.index .. "_" .. game.tick
-        
-        -- Save the pod deployment information
-        storage.pending_pod_deployments[pod_id] = {
-            pod = cargo_pod,
-            vehicle_name = vehicle_data.name,
-            vehicle_color = vehicle_data.color,
-            has_grid = has_grid,
-            grid_data = grid_data,
-            quality = quality,  -- Store the actual quality object
-            quality_name = quality_name,  -- Also store the name as backup
-            player = player,
-            entity_name = entity_name,  -- The actual entity name to create
-            item_name = vehicle_item_name,  -- The item name
-            extras = collected_extras  -- Store the extra items to deploy (with qualities)
-        }
-        
+    if not success or not result or not result.valid then
         return
     end
     
-    -- If cargo pod creation fails, notify the player and abort
-    ----player.print("Error: Could not create cargo pod from hub. Deployment aborted.")
+    cargo_pod = result
+    
+    -- Set cargo pod destination to the target surface at the landing location
+    local dest_success, dest_error = pcall(function()
+        cargo_pod.cargo_pod_destination = {
+            type = defines.cargo_destination.surface,
+            surface = target_surface,
+            position = landing_pos,
+            land_at_exact_position = true
+        }
+    end)
+    
+    if not dest_success then
+        return
+    end
+    
+    -- Set cargo pod origin to the hub
+    local origin_success, origin_error = pcall(function()
+        cargo_pod.cargo_pod_origin = hub
+    end)
+    
+    if not origin_success then
+        return
+    end
+    
+    -- Save all the deployment information for when the pod lands
+    if not storage.pending_pod_deployments then
+        storage.pending_pod_deployments = {}
+    end
+    
+    -- Generate a unique ID for this pod
+    local pod_id = player.index .. "_" .. game.tick
+    
+    -- Save the pod deployment information
+    storage.pending_pod_deployments[pod_id] = {
+        pod = cargo_pod,
+        vehicle_name = vehicle_data.name,
+        vehicle_color = vehicle_data.color,
+        has_grid = has_grid,
+        grid_data = grid_data,  -- Includes defaults equipment_grid merged in
+        quality = quality,  -- Store the actual quality object
+        quality_name = quality_name,  -- Also store the name as backup
+        player = player,
+        entity_name = entity_name,  -- The actual entity name to create
+        item_name = vehicle_item_name,  -- The item name
+        extras = collected_extras,  -- Includes defaults trunk_items merged in
+        api_config = vehicle_data.api_config  -- Store API config if present
+    }
+    
+    -- Put the vehicle item into the pod's inventory (only if it's not a pod item itself)
+    -- If deploy_item is a pod (e.g., scout-o-tron-pod), the pod item becomes the pod, so we don't insert it
+    -- Only insert the actual vehicle item (e.g., scout-o-tron) if it's different from the deploy_item
+    local item_to_insert = nil
+    if deploy_item_name:find("-pod$") then
+        -- deploy_item is a pod, so we only insert the vehicle, not the pod
+        if vehicle_item_name ~= deploy_item_name then
+            item_to_insert = vehicle_item_name
+        end
+        -- If deploy_item is a pod, don't insert anything (the pod item becomes the pod)
+    else
+        -- deploy_item is not a pod, insert it normally
+        item_to_insert = vehicle_item_name
+    end
+    
+    if item_to_insert then
+        local pod_inventory = nil
+        
+        -- Try to get the cargo pod inventory
+        if defines.inventory.cargo_pod then
+            pcall(function()
+                pod_inventory = cargo_pod.get_inventory(defines.inventory.cargo_pod)
+            end)
+        end
+        
+        if not pod_inventory then
+            pcall(function()
+                pod_inventory = cargo_pod.get_inventory(defines.inventory.chest)
+            end)
+        end
+        
+        if pod_inventory then
+            pcall(function()
+                local insert_data = {
+                    name = item_to_insert,
+                    count = 1
+                }
+                if quality and type(quality) == "table" and quality.name then
+                    insert_data.quality = quality
+                end
+                pod_inventory.insert(insert_data)
+            end)
+        end
+    end
+
 end
 
 local function get_ammo_damage(ammo_name)
+    player.print(vehicle_display_name .. " launched.")
     local damage_value = 0
     
     pcall(function()
@@ -548,24 +667,57 @@ function deployment.on_cargo_pod_finished_descending(event)
                 local entity_name = deployment_data.entity_name
                 local extras = deployment_data.extras or {}
                 
-                -- Log quality information
-                if deployment_data.quality then
-                    log("Pod landing: Using quality name: " .. deployment_data.quality.name)
+                -- First, try to extract the vehicle from the pod inventory (original behavior)
+                local deployed_vehicle = nil
+                local pod_inventory = nil
+                
+                -- Try to get the pod inventory
+                if defines.inventory.cargo_pod then
+                    pcall(function()
+                        pod_inventory = pod.get_inventory(defines.inventory.cargo_pod)
+                    end)
                 end
                 
-                -- Try approach 1: passing quality directly
-                local deployed_vehicle = nil
-                pcall(function()
-                    deployed_vehicle = pod.surface.create_entity({
-                        name = entity_name,
-                        position = pod.position,
-                        force = player.force,
-                        create_build_effect_smoke = true,
-                        quality = deployment_data.quality
-                    })
-                end)
-
-                -- If approach 1 failed, try approach 2: passing quality_name
+                if not pod_inventory then
+                    pcall(function()
+                        pod_inventory = pod.get_inventory(defines.inventory.chest)
+                    end)
+                end
+                
+                -- If pod has inventory, try to extract the vehicle item
+                if pod_inventory then
+                    for i = 1, #pod_inventory do
+                        local stack = pod_inventory[i]
+                        if stack.valid_for_read and stack.name == deployment_data.item_name then
+                            -- Found the vehicle item in the pod, extract and place it
+                            local vehicle_quality = nil
+                            pcall(function()
+                                if stack.quality then
+                                    vehicle_quality = stack.quality
+                                end
+                            end)
+                            
+                            -- Create the entity from the item
+                            pcall(function()
+                                deployed_vehicle = pod.surface.create_entity({
+                                    name = entity_name,
+                                    position = pod.position,
+                                    force = player.force,
+                                    create_build_effect_smoke = true,
+                                    quality = vehicle_quality or deployment_data.quality
+                                })
+                            end)
+                            
+                            -- Remove the item from pod inventory after placing
+                            if deployed_vehicle and deployed_vehicle.valid then
+                                stack.count = stack.count - 1
+                            end
+                            break
+                        end
+                    end
+                end
+                
+                -- If we didn't find the vehicle in the pod, create it from scratch (fallback)
                 if not (deployed_vehicle and deployed_vehicle.valid) then
                     pcall(function()
                         deployed_vehicle = pod.surface.create_entity({
@@ -573,31 +725,46 @@ function deployment.on_cargo_pod_finished_descending(event)
                             position = pod.position,
                             force = player.force,
                             create_build_effect_smoke = true,
-                            quality_name = deployment_data.quality_name
+                            quality = deployment_data.quality
                         })
                     end)
-                end
-
-                -- If both approaches failed, create without quality
-                if not (deployed_vehicle and deployed_vehicle.valid) then
-                    deployed_vehicle = pod.surface.create_entity({
-                        name = entity_name,
-                        position = pod.position,
-                        force = player.force,
-                        create_build_effect_smoke = true
-                    })
+                    
+                    if not (deployed_vehicle and deployed_vehicle.valid) then
+                        pcall(function()
+                            deployed_vehicle = pod.surface.create_entity({
+                                name = entity_name,
+                                position = pod.position,
+                                force = player.force,
+                                create_build_effect_smoke = true,
+                                quality_name = deployment_data.quality_name
+                            })
+                        end)
+                    end
+                    
+                    if not (deployed_vehicle and deployed_vehicle.valid) then
+                        pcall(function()
+                            deployed_vehicle = pod.surface.create_entity({
+                                name = entity_name,
+                                position = pod.position,
+                                force = player.force,
+                                create_build_effect_smoke = true
+                            })
+                        end)
+                    end
                 end
                 
-                -- Check if quality was preserved
-                if deployed_vehicle and deployed_vehicle.valid and deployed_vehicle.quality then
-                    log("Deployed vehicle has quality: " .. deployed_vehicle.quality.name)
-                else
-                    log("Deployed vehicle has no quality or invalid quality")
-                end
-                
-                -- Apply color if available
+                -- Apply color if available and entity supports color
                 if vehicle_color and deployed_vehicle and deployed_vehicle.valid then
-                    deployed_vehicle.color = vehicle_color
+                    -- Check if the entity prototype supports color before applying
+                    local entity_prototype = deployed_vehicle.prototype
+                    if entity_prototype and entity_prototype.color then
+                        local color_success, color_error = pcall(function()
+                            deployed_vehicle.color = vehicle_color
+                        end)
+                        if not color_success then
+                        end
+                    else
+                    end
                 end
                 
                 -- Apply custom name if available
@@ -607,7 +774,6 @@ function deployment.on_cargo_pod_finished_descending(event)
                         if deployed_vehicle and deployed_vehicle.valid then
                             pcall(function()
                                 deployed_vehicle.entity_label = vehicle_name
-                                log("Set entity_label to: " .. vehicle_name .. " after delay")
                             end)
                         end
                         script.on_nth_tick(5, nil)  -- Clear the handler
@@ -615,7 +781,8 @@ function deployment.on_cargo_pod_finished_descending(event)
                 end
                 
                 -- Transfer equipment grid using stored data
-                if has_grid and deployed_vehicle and deployed_vehicle.valid and deployed_vehicle.grid then
+                -- Check if we have grid_data to apply (either from vehicle or defaults)
+                if deployed_vehicle and deployed_vehicle.valid and deployed_vehicle.grid and grid_data and #grid_data > 0 then
                     local target_grid = deployed_vehicle.grid
                     for _, equip_data in ipairs(grid_data) do
                         -- Try to create equipment at the exact position first with quality
@@ -651,14 +818,48 @@ function deployment.on_cargo_pod_finished_descending(event)
                             new_equipment.energy = equip_data.energy
                         end
                         
-                        -- Log equipment quality
-                        if new_equipment and new_equipment.valid and new_equipment.quality then
-                            log("Equipment " .. equip_data.name .. " deployed with quality: " .. new_equipment.quality.name)
-                        else
-                            log("Equipment " .. equip_data.name .. " has no quality or invalid quality")
+                    end
+                end
+                
+                -- Handle API-provided equipment and items
+                if deployment_data.api_config and deployed_vehicle and deployed_vehicle.valid then
+                    local api_config = deployment_data.api_config
+                    
+                    -- Add equipment from config if specified
+                    if api_config.equipment_grid and deployed_vehicle.grid then
+                        local grid = deployed_vehicle.grid
+                        for _, equip_config in ipairs(api_config.equipment_grid) do
+                            local count = equip_config.count or 1
+                            for i = 1, count do
+                                local equip = grid.put({name = equip_config.name})
+                                if equip then
+                                end
+                            end
                         end
                     end
-                    log("Transferred equipment grid to deployed vehicle with " .. #grid_data .. " items")
+                    
+                    -- Add trunk items from config if specified
+                    if api_config.trunk_items and vehicle_inventory then
+                        for _, item_config in ipairs(api_config.trunk_items) do
+                            local inserted = vehicle_inventory.insert({
+                                name = item_config.name,
+                                count = item_config.count or 1
+                            })
+                            if inserted > 0 then
+                            end
+                        end
+                    end
+                end
+                
+                -- Show deployment message if entity is scout-o-tron (TFMG compatibility)
+                if deployed_vehicle and deployed_vehicle.valid and entity_name == "scout-o-tron" then
+                    if player and player.valid then
+                        pcall(function()
+                            if deployed_vehicle.gps_tag then
+                                player.print({"spider-ui.scout-o-tron-deploy-message", deployed_vehicle.gps_tag})
+                            end
+                        end)
+                    end
                 end
                 
                 -- Provide fuel if the vehicle has a fuel inventory
@@ -688,7 +889,6 @@ function deployment.on_cargo_pod_finished_descending(event)
                                 quality = best_fuel_item.quality
                             })
                             if inserted > 0 then
-                                log("Inserted " .. inserted .. "x " .. best_fuel_item.quality .. " " .. best_fuel_item.name .. " into fuel inventory")
                             end
                             -- Remove used fuel from extras to avoid double-handling
                             for i, extra in ipairs(extras) do
@@ -704,7 +904,6 @@ function deployment.on_cargo_pod_finished_descending(event)
                             -- Fallback to 5 carbon if no fuel provided
                             local inserted = fuel_inventory.insert({name = "carbon", count = 5})
                             if inserted > 0 then
-                                log("Inserted " .. inserted .. " units of carbon into fuel inventory as fallback")
                             end
                         end
                     end
@@ -866,11 +1065,15 @@ function deployment.on_cargo_pod_finished_descending(event)
                         -- Process other extras (including utilities)
                         if #other_extras > 0 and vehicle_inventory then
                             for _, extra in ipairs(other_extras) do
-                                local inserted = vehicle_inventory.insert({
+                                local insert_data = {
                                     name = extra.name,
-                                    count = extra.count,
-                                    quality = extra.quality
-                                })
+                                    count = extra.count
+                                }
+                                -- Only add quality if it's a valid quality object, not a string
+                                if extra.quality and type(extra.quality) == "table" then
+                                    insert_data.quality = extra.quality
+                                end
+                                local inserted = vehicle_inventory.insert(insert_data)
                                 if inserted > 0 then
                                     --player.print("Added " .. inserted .. "x " .. extra.quality .. " " .. extra.name .. " to vehicle inventory")
                                 end

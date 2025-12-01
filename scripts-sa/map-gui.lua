@@ -1,6 +1,7 @@
 -- scripts-sa/map-gui.lua
 local vehicles_list = require("scripts-sa.vehicles-list")
 local deployment = require("scripts-sa.deployment")
+local api = require("scripts-sa.api")
 
 local map_gui = {}
 
@@ -51,13 +52,14 @@ function get_ammo_category(item_name)
     return ammo_category_map[item_name]
 end
 
-function map_gui.find_orbital_vehicles(player_surface)
+function map_gui.find_orbital_vehicles(player_surface, player)
     local available_vehicles = {}
     local platform_count = 0
     local hub_count = 0
     local inventory_count = 0
     
-   --log("Searching for orbital vehicles above " .. player_surface.name .. "...")
+    if player then
+    end
     
     -- Iterate through all surfaces to find platforms
     for _, surface in pairs(game.surfaces) do
@@ -67,7 +69,8 @@ function map_gui.find_orbital_vehicles(player_surface)
         -- Check if this is a platform surface
         if surface.platform then
             platform_count = platform_count + 1
-           --log("Found platform #" .. platform_count .. ": " .. surface.name)
+            if player then
+            end
             
             -- Check if the platform is orbiting the player's current surface
             local is_orbiting_current_planet = false
@@ -78,29 +81,35 @@ function map_gui.find_orbital_vehicles(player_surface)
                 
                 -- Log the space_location for debugging
                 local location_str = tostring(platform_location)
-               --log("Platform space_location: " .. location_str)
+                if player then
+                end
                 
                 -- Extract the planet name from the location string
                 -- Pattern looks for text between ": " and " (planet)"
                 local orbiting_planet = location_str:match(": ([^%(]+) %(planet%)")
                 
                 if orbiting_planet then
-                   --log("Platform is orbiting planet: " .. orbiting_planet)
+                    if player then
+                    end
                     
                     -- Check if this platform is orbiting the current planet
                     if orbiting_planet == player_surface.name then
                         is_orbiting_current_planet = true
-                       --log("Platform is orbiting the current planet")
+                        if player then
+                        end
                     else
-                       --log("Platform is NOT orbiting the current planet")
+                        if player then
+                        end
                     end
                 else
-                   --log("Could not determine which planet this platform is orbiting")
+                    if player then
+                    end
                     -- If we can't determine, let's include it to be safe
                     is_orbiting_current_planet = true
                 end
             else
-               --log("Platform has no space_location property")
+                if player then
+                end
                 -- If no space_location is specified, assume it's valid
                 is_orbiting_current_planet = true
             end
@@ -110,7 +119,8 @@ function map_gui.find_orbital_vehicles(player_surface)
                 -- Check if the platform has a hub
                 if surface.platform.hub and surface.platform.hub.valid then
                     hub_count = hub_count + 1
-                   --log("Found valid hub #" .. hub_count)
+                    if player then
+                    end
                     
                     -- Check for vehicles in the hub's inventory
                     local hub = surface.platform.hub
@@ -122,30 +132,68 @@ function map_gui.find_orbital_vehicles(player_surface)
                         local inventory = hub.get_inventory(inv_type)
                         if inventory then
                             inventory_count = inventory_count + 1
-                           --log("Found inventory type " .. inv_type .. " with " .. #inventory .. " slots")
+                            if player then
+                            end
                             
                             -- Scan the inventory for all vehicles
                             for i = 1, #inventory do
                                 local stack = inventory[i]
                                 if stack.valid_for_read then
-                                   --log("Slot " .. i .. " contains: " .. stack.name .. " x" .. stack.count)
-                                    
-                                    -- Check if this is a vehicle - for now, include everything
-                                    local is_vehicle = vehicles_list.is_vehicle(stack.name)
-
-                                    if is_vehicle then
-                                       --log("Found vehicle in slot " .. i .. ": " .. stack.name)
+                                    if player then
                                     end
                                     
-                                    -- Optionally use a more selective check if you implement it:
-                                    -- local is_vehicle = vehicles_list.is_vehicle(stack.name)
+                                    -- Check if this is a vehicle
+                                    local is_vehicle = vehicles_list.is_vehicle(stack.name)
+                                    
+                                    if is_vehicle then
+                                        if player then
+                                        end
+                                    else
+                                        if player then
+                                        end
+                                    end
                                     
                                     -- Is it a spider vehicle? (for categorization/filtering)
                                     local is_spider_vehicle = vehicles_list.is_spider_vehicle(stack.name)
                                     
-                                    if is_vehicle and not processed_slots[i] then
+                                    -- Check if this vehicle has deployment requirements (via API)
+                                    local has_requirements = false
+                                    local requirements_met = true
+                                    local deploy_item = stack.name
+                                    local entity_name = stack.name
+                                    
+                                    if is_vehicle and api.vehicle_requirements and api.vehicle_requirements[stack.name] then
+                                        -- Check if vehicle has requirements registered
+                                        has_requirements = true
+                                        local req_data = api.vehicle_requirements[stack.name]
+                                        
+                                        -- Get deploy_item and entity_name from requirements
+                                        deploy_item = req_data.deploy_item or stack.name
+                                        entity_name = req_data.entity_name or stack.name
+                                        
+                                        -- Check if all required items exist
+                                        local req_check, req_result = api.check_vehicle_requirements(stack.name, hub)
+                                        if req_check then
+                                            requirements_met = true
+                                            if player then
+                                            end
+                                        else
+                                            requirements_met = false
+                                            if player then
+                                            end
+                                        end
+                                    end
+                                    
+                                    -- Only add vehicle if it has no requirements OR all requirements are met
+                                    local should_skip = false
+                                    if is_vehicle and has_requirements and not requirements_met then
+                                        should_skip = true
+                                    end
+                                    
+                                    if is_vehicle and not processed_slots[i] and not should_skip then
                                         processed_slots[i] = true
-                                       --log("ADDING VEHICLE: " .. stack.name .. " to available vehicles list")
+                                        if player then
+                                        end
                                         
                                         -- Try to get the vehicle's custom name if available
                                         local name = stack.name:gsub("^%l", string.upper)
@@ -196,8 +244,24 @@ function map_gui.find_orbital_vehicles(player_surface)
                                         -- Build tooltip with platform details
                                         local tooltip = "Platform: " .. surface.name .. "\nSlot: " .. i
                                         
-                                        -- Get entity name for placing
-                                        local entity_name = stack.name
+                                        -- Get entity name and deploy item (may have been set by requirements check)
+                                        -- If not set by requirements, use defaults
+                                        if not entity_name or entity_name == stack.name then
+                                            -- Check if there's a registered requirement that specifies entity_name
+                                            if api.vehicle_requirements and api.vehicle_requirements[stack.name] then
+                                                local req_data = api.vehicle_requirements[stack.name]
+                                                entity_name = req_data.entity_name or stack.name
+                                                deploy_item = req_data.deploy_item or stack.name
+                                            end
+                                        end
+                                        
+                                        -- Default entity_name if still not set
+                                        if not entity_name then
+                                            entity_name = stack.name
+                                        end
+                                        
+                                        -- Use deploy_item (from requirements) or vehicle_name (the actual item in inventory)
+                                        local vehicle_item_name = deploy_item or stack.name
                                         
                                         -- Add the vehicle to the available vehicles list
                                         table.insert(available_vehicles, {
@@ -210,12 +274,14 @@ function map_gui.find_orbital_vehicles(player_surface)
                                             inv_type = inv_type,
                                             platform_name = surface.platform.name,
                                             quality = quality,
-                                            vehicle_name = stack.name,
-                                            entity_name = entity_name,
+                                            vehicle_name = stack.name,  -- The item in inventory
+                                            deploy_item = vehicle_item_name,  -- The item to deploy (may differ)
+                                            entity_name = entity_name,  -- The entity to create
                                             is_spider = is_spider_vehicle
                                         })
                                         
-                                       --log("Added " .. name .. " to available vehicles list")
+                                        if player then
+                                        end
                                     end
                                 end
                             end
@@ -237,8 +303,13 @@ function map_gui.find_orbital_vehicles(player_surface)
     -- Debug log of all found vehicles
    --log("Search complete. Found " .. platform_count .. " platforms, " .. hub_count .. " hubs, " .. inventory_count .. " inventories, and " .. #available_vehicles .. " vehicles above " .. player_surface.name)
     
+    if player then
+    end
+    
     for i, vehicle in ipairs(available_vehicles) do
        --log("Vehicle " .. i .. ": " .. vehicle.name .. " (" .. vehicle.vehicle_name .. ")")
+        if player then
+        end
     end
     
     return available_vehicles
@@ -666,7 +737,13 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         if player.gui.screen["spidertron_deployment_frame"] then
             player.gui.screen["spidertron_deployment_frame"].destroy()
         end
-        deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target)
+        -- Get default equipment and trunk items for this vehicle (if registered)
+        local defaults = {equipment_grid = {}, trunk_items = {}}
+        if api.vehicle_defaults and api.vehicle_defaults[vehicle_data.vehicle_name] then
+            defaults = api.vehicle_defaults[vehicle_data.vehicle_name]
+        end
+        
+        deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, nil, defaults)
         return
     end
     
@@ -1044,14 +1121,8 @@ function map_gui.on_player_changed_render_mode(event)
     local player = game.get_player(event.player_index)
     if not player then return end
 
-    -- Check both conditions
-    local spidertron_researched = player.force.technologies["spidertron"].researched
-    
-    if spidertron_researched and not player.surface.name:find("platform") then
-        player.set_shortcut_available("orbital-spidertron-deploy", true)
-    else
-        player.set_shortcut_available("orbital-spidertron-deploy", false)
-    end
+    -- Use the same logic as initialize_player_shortcuts
+    map_gui.initialize_player_shortcuts(player)
 end
 
 -- Improved platform inventory scanner with better debugging
@@ -1177,8 +1248,14 @@ function handle_extras_menu_clicks(event)
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
         
-        -- Deploy the vehicle without extras
-        deployment.deploy_spider_vehicle(player, deployment_data.vehicle, deployment_data.deploy_target)
+        -- Get default equipment and trunk items for this vehicle (if registered)
+        local defaults = {equipment_grid = {}, trunk_items = {}}
+        if api.vehicle_defaults and api.vehicle_defaults[deployment_data.vehicle.vehicle_name] then
+            defaults = api.vehicle_defaults[deployment_data.vehicle.vehicle_name]
+        end
+        
+        -- Deploy the vehicle without extras (but with defaults)
+        deployment.deploy_spider_vehicle(player, deployment_data.vehicle, deployment_data.deploy_target, nil, defaults)
         
         -- Clear the temp data
         storage.temp_deployment_data = nil
@@ -1245,12 +1322,19 @@ function handle_extras_menu_clicks(event)
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
         
-        -- Deploy the vehicle with extras
+        -- Get default equipment and trunk items for this vehicle (if registered)
+        local defaults = {equipment_grid = {}, trunk_items = {}}
+        if api.vehicle_defaults and api.vehicle_defaults[deployment_data.vehicle.vehicle_name] then
+            defaults = api.vehicle_defaults[deployment_data.vehicle.vehicle_name]
+        end
+        
+        -- Deploy the vehicle with extras (defaults will be merged with extras)
         deployment.deploy_spider_vehicle(
             player, 
             deployment_data.vehicle, 
             deployment_data.deploy_target,
-            selected_extras
+            selected_extras,
+            defaults
         )
         
         -- Clear the temp data
@@ -1351,7 +1435,7 @@ function map_gui.on_gui_click(event)
         end
         
         -- Retrieve stored vehicle data
-        local vehicles = map_gui.find_orbital_vehicles(player.surface)
+        local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
         
         -- Reopen the deployment menu with the same vehicles list
         map_gui.show_deployment_menu(player, vehicles)
@@ -1411,7 +1495,7 @@ function map_gui.on_lua_shortcut(event)
         if not player then return end
         
         -- Find orbital spider vehicles
-        local vehicles = map_gui.find_orbital_vehicles(player.surface)
+        local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
         if #vehicles == 0 then
             --player.print("No vehicles are deployable to this surface.")
             return
@@ -1440,11 +1524,66 @@ end
 
 -- Initialize player's shortcut buttons
 function map_gui.initialize_player_shortcuts(player)
-    -- First check if the technology is researched
-    local spidertron_researched = player.force.technologies["spidertron"].researched
+    -- Check if TFMG mod is active
+    local is_tfmg_active = script.active_mods["TFMG"] ~= nil or script.active_mods["tfmg"] ~= nil
     
-    -- Only enable if researched AND not on a platform
-    if spidertron_researched and not player.surface.name:find("platform") then
+    -- Check if any spider-vehicle types exist in the game
+    if not vehicles_list.spider_vehicles then
+        vehicles_list.initialize()
+    end
+    local has_spider_vehicles = #vehicles_list.spider_vehicles > 0
+    
+    -- Determine if on a platform surface
+    -- Check if the surface has a platform property (more reliable than name matching)
+    local is_on_platform = false
+    if player.surface.platform then
+        is_on_platform = true
+    elseif player.surface.name:find("platform") then
+        is_on_platform = true
+    end
+    
+    -- Determine if shortcut should be enabled
+    local should_enable = false
+    
+    if is_tfmg_active then
+        -- If TFMG is active, enable from start (scout-o-trons are in starting inventory)
+        -- Also check for scout-o-tron technology as a fallback
+        local scout_tech = player.force.technologies["scout-o-tron"]
+        if scout_tech and scout_tech.researched then
+            should_enable = true
+        elseif not has_spider_vehicles then
+            -- If no spider-vehicle types exist, unlock from start
+            should_enable = true
+        else
+            -- TFMG is active, enable from start
+            should_enable = true
+        end
+    elseif not has_spider_vehicles then
+        -- If no spider-vehicle types exist, unlock from start
+        should_enable = true
+    else
+        -- Check for spider-related technologies
+        local spidertron_tech = player.force.technologies["spidertron"]
+        local any_spider_researched = (spidertron_tech and spidertron_tech.researched) or false
+        
+        -- Also check for modded spidertrons
+        for tech_name, tech in pairs(player.force.technologies) do
+            if tech.researched and (
+                tech_name:find("spider") or 
+                tech_name:find("spidertron") or 
+                tech_name:find("spiderdrone") or
+                tech_name:find("spiderbot")
+            ) then
+                any_spider_researched = true
+                break
+            end
+        end
+        
+        should_enable = any_spider_researched
+    end
+    
+    -- Enable shortcut if conditions are met AND not on platform
+    if should_enable and not is_on_platform then
         player.set_shortcut_available("orbital-spidertron-deploy", true)
     else
         player.set_shortcut_available("orbital-spidertron-deploy", false)
