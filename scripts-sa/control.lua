@@ -25,7 +25,7 @@ local function init_players()
     local has_spider_vehicles = #vehicles_list.spider_vehicles > 0
     
     -- Check if TFMG mod is active
-    local is_tfmg_active = script.active_mods["TFMG"] ~= nil or script.active_mods["tfmg"] ~= nil
+    local is_tfmg_active = api.is_tfmg_active()
     
     for _, player in pairs(game.players) do
         -- Determine if on a platform surface
@@ -41,18 +41,8 @@ local function init_players()
         local should_enable = false
         
         if is_tfmg_active then
-            -- If TFMG is active, enable from start (scout-o-trons are in starting inventory)
-            -- Also check for scout-o-tron technology as a fallback
-            local scout_tech = player.force.technologies["scout-o-tron"]
-            if scout_tech and scout_tech.researched then
-                should_enable = true
-            elseif not has_spider_vehicles then
-                -- If no spider-vehicle types exist, unlock from start
-                should_enable = true
-            else
-                -- TFMG is active, enable from start
-                should_enable = true
-            end
+            -- TFMG is active, enable from start (scout-o-trons are in starting inventory)
+            should_enable = true
         elseif not has_spider_vehicles then
             -- If no spider-vehicle types exist, unlock from start
             should_enable = true
@@ -77,8 +67,9 @@ local function init_players()
             should_enable = any_spider_researched
         end
         
-        -- Enable shortcut if conditions are met AND not on platform
-        if should_enable and not is_on_platform then
+        -- Enable shortcut if conditions are met
+        -- With TFMG, ignore platform check (player is always on platform)
+        if should_enable and (not is_on_platform or is_tfmg_active) then
             player.set_shortcut_available("orbital-spidertron-deploy", true)
         else
             player.set_shortcut_available("orbital-spidertron-deploy", false)
@@ -332,7 +323,6 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         local player = game.get_player(event.player_index)
         if not player then return end
         
-        
         -- Check if player is on a platform surface - can't deploy vehicles to platforms
         if player.surface.platform then
             player.print("Cannot deploy vehicles to a platform surface.")
@@ -393,6 +383,14 @@ end
 
 -- Handle new player creation
 script.on_event(defines.events.on_player_created, function(event)
+    local player = game.get_player(event.player_index)
+    if player then
+        map_gui.initialize_player_shortcuts(player)
+    end
+end)
+
+-- Handle existing player joining (multiplayer)
+script.on_event(defines.events.on_player_joined_game, function(event)
     local player = game.get_player(event.player_index)
     if player then
         map_gui.initialize_player_shortcuts(player)
@@ -521,5 +519,3 @@ commands.add_command("debug_hub_inventory", "Debug hub inventory items", functio
         end
     end
 end)
-
-debug_log("Space Age control script loaded")

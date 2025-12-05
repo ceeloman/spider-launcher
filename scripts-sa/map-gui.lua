@@ -1113,6 +1113,8 @@ function map_gui.on_player_changed_surface(event)
         if player.gui.screen["spidertron_deployment_frame"] then
             player.gui.screen["spidertron_deployment_frame"].destroy()
         end
+        -- Update shortcut availability (platform check may have changed)
+        map_gui.initialize_player_shortcuts(player)
     end
 end
 
@@ -1525,7 +1527,7 @@ end
 -- Initialize player's shortcut buttons
 function map_gui.initialize_player_shortcuts(player)
     -- Check if TFMG mod is active
-    local is_tfmg_active = script.active_mods["TFMG"] ~= nil or script.active_mods["tfmg"] ~= nil
+    local is_tfmg_active = api.is_tfmg_active()
     
     -- Check if any spider-vehicle types exist in the game
     if not vehicles_list.spider_vehicles then
@@ -1546,18 +1548,8 @@ function map_gui.initialize_player_shortcuts(player)
     local should_enable = false
     
     if is_tfmg_active then
-        -- If TFMG is active, enable from start (scout-o-trons are in starting inventory)
-        -- Also check for scout-o-tron technology as a fallback
-        local scout_tech = player.force.technologies["scout-o-tron"]
-        if scout_tech and scout_tech.researched then
-            should_enable = true
-        elseif not has_spider_vehicles then
-            -- If no spider-vehicle types exist, unlock from start
-            should_enable = true
-        else
-            -- TFMG is active, enable from start
-            should_enable = true
-        end
+        -- TFMG is active, enable from start (scout-o-trons are in starting inventory)
+        should_enable = true
     elseif not has_spider_vehicles then
         -- If no spider-vehicle types exist, unlock from start
         should_enable = true
@@ -1582,8 +1574,9 @@ function map_gui.initialize_player_shortcuts(player)
         should_enable = any_spider_researched
     end
     
-    -- Enable shortcut if conditions are met AND not on platform
-    if should_enable and not is_on_platform then
+    -- Enable shortcut if conditions are met
+    -- With TFMG, ignore platform check (player is always on platform)
+    if should_enable and (not is_on_platform or is_tfmg_active) then
         player.set_shortcut_available("orbital-spidertron-deploy", true)
     else
         player.set_shortcut_available("orbital-spidertron-deploy", false)

@@ -314,6 +314,11 @@ function api.get_vehicle_defaults(vehicle_item)
     return api.vehicle_defaults[vehicle_item] or {equipment_grid = {}, trunk_items = {}}
 end
 
+-- Check if TFMG mod is active
+function api.is_tfmg_active()
+    return script.active_mods["TFMG"] ~= nil or script.active_mods["tfmg"] ~= nil
+end
+
 -- Register the remote interface
 remote.add_interface("spider-launcher", {
     deploy_from_hub = api.deploy_from_hub,
