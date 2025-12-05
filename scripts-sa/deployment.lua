@@ -718,7 +718,7 @@ function deployment.on_cargo_pod_finished_descending(event)
                         -- Process ammo (unchanged, now includes rockets)
                         if ammo_inventory and #ammo_extras > 0 then
                             local ammo_slot_count = #ammo_inventory
-                            --player.print("Vehicle has " .. ammo_slot_count .. " ammo slots")
+                            ----player.print("Vehicle has " .. ammo_slot_count .. " ammo slots")
                             local ammo_by_category = {}
                             for _, extra in ipairs(ammo_extras) do
                                 local category = get_ammo_category(extra.name) or "unknown"
@@ -738,7 +738,7 @@ function deployment.on_cargo_pod_finished_descending(event)
                             
                             local slots_by_category = find_compatible_slots_by_category(deployed_vehicle, ammo_inventory)
                             for category, slots in pairs(slots_by_category) do
-                                --player.print("Category '" .. category .. "' can use slots: " .. table.concat(slots, ", "))
+                                ----player.print("Category '" .. category .. "' can use slots: " .. table.concat(slots, ", "))
                             end
                             
                             for category, ammo_items in pairs(ammo_by_category) do
@@ -785,7 +785,7 @@ function deployment.on_cargo_pod_finished_descending(event)
                                             })
                                         end)
                                         if success then
-                                            --player.print("Inserted " .. to_insert .. "x " .. priority_ammo.quality .. " " .. priority_ammo.name .. " into slot " .. slot_index)
+                                            ----player.print("Inserted " .. to_insert .. "x " .. priority_ammo.quality .. " " .. priority_ammo.name .. " into slot " .. slot_index)
                                             remaining_to_insert = remaining_to_insert - to_insert
                                         end
                                     end
@@ -796,7 +796,7 @@ function deployment.on_cargo_pod_finished_descending(event)
                                             quality = priority_ammo.quality
                                         })
                                         if inserted > 0 then
-                                            --player.print("Added " .. inserted .. "x " .. priority_ammo.quality .. " " .. priority_ammo.name .. " to vehicle inventory")
+                                            ----player.print("Added " .. inserted .. "x " .. priority_ammo.quality .. " " .. priority_ammo.name .. " to vehicle inventory")
                                         end
                                     end
                                     if #ammo_priority > 1 and vehicle_inventory then
@@ -808,12 +808,12 @@ function deployment.on_cargo_pod_finished_descending(event)
                                                 quality = ammo.quality
                                             })
                                             if inserted > 0 then
-                                                --player.print("Added " .. inserted .. "x " .. ammo.quality .. " " .. ammo.name .. " to vehicle inventory")
+                                                ----player.print("Added " .. inserted .. "x " .. ammo.quality .. " " .. ammo.name .. " to vehicle inventory")
                                             end
                                         end
                                     end
                                 else
-                                    --player.print("No compatible slots found for " .. category .. " ammo, adding to trunk")
+                                    ----player.print("No compatible slots found for " .. category .. " ammo, adding to trunk")
                                     for _, ammo in ipairs(ammo_priority) do
                                         if vehicle_inventory then
                                             local inserted = vehicle_inventory.insert({
@@ -822,7 +822,7 @@ function deployment.on_cargo_pod_finished_descending(event)
                                                 quality = ammo.quality
                                             })
                                             if inserted > 0 then
-                                                --player.print("Added " .. inserted .. "x " .. ammo.quality .. " " .. ammo.name .. " to vehicle inventory")
+                                                ----player.print("Added " .. inserted .. "x " .. ammo.quality .. " " .. ammo.name .. " to vehicle inventory")
                                             end
                                         end
                                     end
@@ -839,7 +839,7 @@ function deployment.on_cargo_pod_finished_descending(event)
                                     quality = extra.quality
                                 })
                                 if inserted > 0 then
-                                    --player.print("Added " .. inserted .. "x " .. extra.quality .. " " .. extra.name .. " to vehicle inventory")
+                                    ----player.print("Added " .. inserted .. "x " .. extra.quality .. " " .. extra.name .. " to vehicle inventory")
                                 end
                             end
                         end

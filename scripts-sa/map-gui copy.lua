@@ -448,7 +448,7 @@ function map_gui.on_gui_click(event)
             end
 
             -- Show deployment message
-            player.print("Initiating deployment of Spidertron: " .. spidertron.name .. " from orbit to map target")
+            --player.print("Initiating deployment of Spidertron: " .. spidertron.name .. " from orbit to map target")
 
             -- Deploy the spidertron to the map target
             map_gui.deploy_spidertron(player, spidertron, "target")
@@ -471,7 +471,7 @@ function map_gui.on_gui_click(event)
             end
 
             -- Show deployment message
-            player.print("Initiating deployment of Spidertron: " .. spidertron.name .. " from orbit to your location. Be careful the pod does not land on your head!")
+            --player.print("Initiating deployment of Spidertron: " .. spidertron.name .. " from orbit to your location. Be careful the pod does not land on your head!")
 
             -- Deploy the spidertron to the player's location
             map_gui.deploy_spidertron(player, spidertron, "player")
@@ -492,25 +492,25 @@ function map_gui.deploy_spidertron(player, spidertron_data, deploy_target)
     
     -- Verify the hub and inventory are still valid
     if not hub or not hub.valid then
-        player.print("Error: Hub is no longer valid")
+        --player.print("Error: Hub is no longer valid")
         return
     end
     
     local inventory = hub.get_inventory(inv_type)
     if not inventory then
-        player.print("Error: Inventory not found")
+        --player.print("Error: Inventory not found")
         return
     end
     
     local stack = inventory[inventory_slot]
     if not stack or not stack.valid_for_read or stack.name ~= "spidertron" then
-        player.print("Error: Spidertron is no longer in the specified slot")
+        --player.print("Error: Spidertron is no longer in the specified slot")
         return
     end
     
     -- Check if deployment target is a platform
     if player.surface.name:find("platform") then
-        player.print("Error: Cannot deploy Spidertrons on platforms")
+        --player.print("Error: Cannot deploy Spidertrons on platforms")
         return
     end
     
@@ -562,7 +562,7 @@ function map_gui.deploy_spidertron(player, spidertron_data, deploy_target)
 
     if not player.surface.is_chunk_generated({x = chunk_x, y = chunk_y}) then
         -- Decide what to do: either generate or abort
-        player.print("Target area not yet explored. Mapping landing zone...")
+        --player.print("Target area not yet explored. Mapping landing zone...")
         
         --Generate the chunk
         player.surface.request_to_generate_chunks(landing_pos, 1)
@@ -621,7 +621,7 @@ function map_gui.deploy_spidertron(player, spidertron_data, deploy_target)
         log("Selected valid landing position: " .. landing_pos.x .. ", " .. landing_pos.y)
     else
         -- No valid tiles found, exit
-        player.print("Drop pod can't deploy over fluids! Try over land.")
+        --player.print("Drop pod can't deploy over fluids! Try over land.")
         return
     end
 
@@ -713,7 +713,7 @@ function map_gui.deploy_spidertron(player, spidertron_data, deploy_target)
     end
     
     -- If cargo pod creation fails, notify the player and abort
-    player.print("Error: Could not create cargo pod from hub. Deployment aborted.")
+    --player.print("Error: Could not create cargo pod from hub. Deployment aborted.")
 end
 
 -- This function handles the cargo pod landing event
@@ -879,7 +879,7 @@ function map_gui.on_lua_shortcut(event)
         -- Find orbital spidertrons
         local spidertrons = map_gui.find_orbital_spidertrons(player.surface)
         if #spidertrons == 0 then
-            player.print("No spidertrons are available in orbit above this planet.")
+            --player.print("No spidertrons are available in orbit above this planet.")
             return
         end
         

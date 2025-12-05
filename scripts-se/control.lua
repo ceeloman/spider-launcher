@@ -15,7 +15,7 @@ local function init_storage()
     storage.pending_deployments = storage.pending_deployments or {}
     storage.pending_pod_deployments = storage.pending_pod_deployments or {}
     storage.temp_deployment_data = storage.temp_deployment_data or {}
-    debug_log("Space Exploration storage initialized")
+    --debug_log("Space Exploration storage initialized")
 end
 
 -- Initialize player shortcuts
@@ -37,12 +37,12 @@ script.on_init(function()
     end
     vehicles_list.initialize()
     
-    debug_log("Space Exploration module initialized")
+    --debug_log("Space Exploration module initialized")
 end)
 
 -- Register events on load
 script.on_load(function()
-    debug_log("Space Exploration module loaded")
+    --debug_log("Space Exploration module loaded")
 end)
 
 -- Register events on configuration changed
@@ -51,7 +51,7 @@ script.on_configuration_changed(function(data)
     init_players()
     vehicles_list.initialize()
     
-    debug_log("Configuration changed, storage reinitialized")
+    --debug_log("Configuration changed, storage reinitialized")
 end)
 
 -- Consolidated GUI click handler (for stack buttons and other GUI elements)
@@ -117,7 +117,7 @@ script.on_event(defines.events.on_gui_click, function(event)
             slider.slider_value = new_value
             text_field.text = tostring(new_value)
             
-            player.print("Added " .. stack_size .. " " .. item_name .. ". New amount: " .. new_value)
+            --player.print("Added " .. stack_size .. " " .. item_name .. ". New amount: " .. new_value)
             return
         end
     end
@@ -309,20 +309,20 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         if not player then return end
         
         debug_log("=== ORBITAL DEPLOYMENT SHORTCUT CLICKED ===")
-        player.print("=== ORBITAL DEPLOYMENT SHORTCUT CLICKED ===")
-        player.print("Player: " .. player.name)
-        player.print("Player surface: " .. player.surface.name .. " (index: " .. player.surface.index .. ")")
+        --player.print("=== ORBITAL DEPLOYMENT SHORTCUT CLICKED ===")
+        --player.print("Player: " .. player.name)
+        --player.print("Player surface: " .. player.surface.name .. " (index: " .. player.surface.index .. ")")
         debug_log("Player: " .. player.name)
         debug_log("Player surface: " .. player.surface.name .. " (index: " .. player.surface.index .. ")")
         
         -- Log all loaded surfaces
-        player.print("--- ALL LOADED SURFACES ---")
+        --player.print("--- ALL LOADED SURFACES ---")
         debug_log("--- ALL LOADED SURFACES ---")
         local surface_count = 0
         for _, surface in pairs(game.surfaces) do
             surface_count = surface_count + 1
             local surface_info = "Surface #" .. surface_count .. ": " .. surface.name .. " (index: " .. surface.index .. ")"
-            player.print(surface_info)
+            --player.print(surface_info)
             debug_log(surface_info)
             
             -- Try to get zone info for each surface
@@ -331,42 +331,42 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
             end)
             if success and zone then
                 local zone_info = "  -> Zone: " .. (zone.name or "unknown") .. " (type: " .. (zone.type or "unknown") .. ")"
-                player.print(zone_info)
+                --player.print(zone_info)
                 debug_log(zone_info)
                 if zone.parent then
                     local parent_info = "  -> Zone parent: " .. (zone.parent.name or "unknown")
-                    player.print(parent_info)
+                    --player.print(parent_info)
                     debug_log(parent_info)
                 end
             else
                 local no_zone_info = "  -> No zone information available"
-                player.print(no_zone_info)
+                --player.print(no_zone_info)
                 debug_log(no_zone_info)
             end
         end
         local total_info = "Total surfaces: " .. surface_count
-        player.print(total_info)
+        --player.print(total_info)
         debug_log(total_info)
-        player.print("--- END SURFACE LIST ---")
+        --player.print("--- END SURFACE LIST ---")
         debug_log("--- END SURFACE LIST ---")
         
         -- Find orbital spider vehicles
-        player.print("Searching for orbital vehicles...")
+        --player.print("Searching for orbital vehicles...")
         debug_log("Searching for orbital vehicles...")
         local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
         local found_info = "Found " .. #vehicles .. " deployable vehicles"
-        player.print(found_info)
+        --player.print(found_info)
         debug_log(found_info)
         
         if #vehicles == 0 then
-            player.print("No vehicles are deployable to this surface.")
+            --player.print("No vehicles are deployable to this surface.")
             debug_log("No vehicles found - deployment aborted")
             return
         end
         
         -- Show selection dialog with appropriate deployment options
         local menu_info = "Showing deployment menu with " .. #vehicles .. " vehicles"
-        player.print(menu_info)
+        --player.print(menu_info)
         debug_log(menu_info)
         map_gui.show_deployment_menu(player, vehicles)
     end
@@ -389,6 +389,37 @@ script.on_event(defines.events.on_player_created, function(event)
     local player = game.get_player(event.player_index)
     if player then
         map_gui.initialize_player_shortcuts(player)
+    end
+end)
+
+-- Register event handler for cargo pod finished ascending (for same-surface deployment workaround)
+script.on_event(defines.events.on_cargo_pod_finished_ascending, function(event)
+    local pod = event.cargo_pod
+    if not pod or not pod.valid then return end
+    
+    -- Check if this pod needs destination fix
+    if storage.pending_pod_deployments then
+        for pod_id, deployment_data in pairs(storage.pending_pod_deployments) do
+            local matches = false
+            if deployment_data.pod_unit_number and pod.unit_number then
+                matches = (deployment_data.pod_unit_number == pod.unit_number)
+            else
+                matches = (deployment_data.pod == pod)
+            end
+            
+            if matches and deployment_data.actual_surface and deployment_data.actual_position then
+                -- Fix the destination back to the actual surface
+                pcall(function()
+                    pod.cargo_pod_destination = {
+                        type = defines.cargo_destination.surface,
+                        surface = deployment_data.actual_surface,
+                        position = deployment_data.actual_position,
+                        land_at_exact_position = true
+                    }
+                end)
+                return
+            end
+        end
     end
 end)
 
@@ -465,7 +496,7 @@ script.on_nth_tick(300, function()  -- Check every 5 seconds
     end
 end)
 
-debug_log("Space Exploration control script loaded")
+--debug_log("Space Exploration control script loaded")
 
 -- In control.lua on_init, after init_storage()
 
@@ -478,7 +509,7 @@ script.on_init(function()
     if prototypes.space_location["ovd-se-generic"] then
         local planet = game.planets["ovd-se-generic"]
         if not planet then
-            log("[OVD] Attempting to create planet from ovd-se-generic space-location")
+            --log("[OVD] Attempting to create planet from ovd-se-generic space-location")
             -- Planets are created automatically when a space location is discovered
             -- Try creating a dummy surface first, then we can associate SE surfaces later
             local success, result = pcall(function()
@@ -491,7 +522,7 @@ script.on_init(function()
             end)
             
             if success and result then
-                log("[OVD] Planet created successfully")
+                --log("[OVD] Planet created successfully")
             else
                 log("[OVD] Could not create planet: " .. tostring(result))
             end

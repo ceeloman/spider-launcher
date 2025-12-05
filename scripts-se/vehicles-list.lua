@@ -34,8 +34,8 @@ function vehicles_list.initialize()
     end
 
     -- Log the found vehicles
-    log("Found " .. #vehicles_list.all_vehicles .. " valid vehicles")
-    log("Found " .. #vehicles_list.spider_vehicles .. " spider vehicles")
+    --log("Found " .. #vehicles_list.all_vehicles .. " valid vehicles")
+    --log("Found " .. #vehicles_list.spider_vehicles .. " spider vehicles")
 
     return vehicles_list.all_vehicles, vehicles_list.spider_vehicles
 end

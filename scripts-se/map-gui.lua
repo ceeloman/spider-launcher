@@ -76,8 +76,8 @@ function map_gui.find_orbital_vehicles(player_surface, player)
     local hub_count = 0
     local inventory_count = 0
     
-    log("[SE] Searching for orbital vehicles above " .. player_surface.name .. "...")
-    if player then player.print("Searching for orbital vehicles above " .. player_surface.name .. "...") end
+    --log("[SE] Searching for orbital vehicles above " .. player_surface.name .. "...")
+    --if player then player.print("Searching for orbital vehicles above " .. player_surface.name .. "...") end
     
     -- SE-SPECIFIC: Get the player's current zone
     local player_zone = nil
@@ -87,11 +87,11 @@ function map_gui.find_orbital_vehicles(player_surface, player)
     if success and result then
         player_zone = result
         local zone_info = "Player is on zone: " .. (player_zone.name or "unknown") .. " (type: " .. (player_zone.type or "unknown") .. ")"
-        log("[SE] " .. zone_info)
-        if player then player.print(zone_info) end
+        --log("[SE] " .. zone_info)
+        --if player then player.print(zone_info) end
     else
-        log("[SE] Could not get player zone, remote call failed")
-        if player then player.print("ERROR: Could not get player zone") end
+        --log("[SE] Could not get player zone, remote call failed")
+        --if player then player.print("ERROR: Could not get player zone") end
         return available_vehicles
     end
     
@@ -101,24 +101,24 @@ function map_gui.find_orbital_vehicles(player_surface, player)
     if is_space_zone_type(player_zone.type) then
         -- Player is already on a space surface (orbit, asteroid-belt, or asteroid-field) - use that surface
         target_orbit_surface = player_surface
-        log("[SE] Player is on space surface: " .. player_surface.name .. " (type: " .. player_zone.type .. ")")
-        if player then player.print("Player is on space surface: " .. player_surface.name .. " (type: " .. player_zone.type .. ")") end
+        --log("[SE] Player is on space surface: " .. player_surface.name .. " (type: " .. player_zone.type .. ")")
+        --if player then player.print("Player is on space surface: " .. player_surface.name .. " (type: " .. player_zone.type .. ")") end
     elseif player_zone.type == "planet" or player_zone.type == "moon" then
         -- Player is on a planet/moon - find the orbit, asteroid-belt, or asteroid-field for this planet
         local planet_name = player_zone.name or player_surface.name
         local expected_orbit_name = planet_name .. " Orbit"
         
-        log("[SE] Player is on planet/moon: " .. planet_name)
-        log("[SE] Looking for space surfaces (orbit, asteroid-belt, asteroid-field) for: " .. planet_name)
+        --log("[SE] Player is on planet/moon: " .. planet_name)
+        --log("[SE] Looking for space surfaces (orbit, asteroid-belt, asteroid-field) for: " .. planet_name)
         if player then 
-            player.print("Player is on planet/moon: " .. planet_name)
-            player.print("Looking for space surfaces...")
+            --player.print("Player is on planet/moon: " .. planet_name)
+            --player.print("Looking for space surfaces...")
         end
         
         -- Search all surfaces for matching space zones (orbit, asteroid-belt, asteroid-field)
         -- First try orbit (most common)
         for _, surface in pairs(game.surfaces) do
-            log("[SE] Checking surface: " .. surface.name)
+            --log("[SE] Checking surface: " .. surface.name)
             local zone_success, zone_result = pcall(function()
                 return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
             end)
@@ -128,37 +128,37 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                 local parent_matches = true
                 if zone_result.parent then
                     parent_matches = (zone_result.parent.name == planet_name)
-                    log("[SE] Space zone parent: " .. (zone_result.parent.name or "unknown") .. ", Planet: " .. planet_name)
+                    --log("[SE] Space zone parent: " .. (zone_result.parent.name or "unknown") .. ", Planet: " .. planet_name)
                 else
-                    log("[SE] Space zone has no parent")
+                    --log("[SE] Space zone has no parent")
                 end
                 
                 -- Use the space surface if parent matches, or if it's an orbit with matching name
                 -- Note: asteroid-belt and asteroid-field zones are handled via parent matching (same as orbit when parent is set)
                 if parent_matches or (zone_result.type == "orbit" and surface.name == expected_orbit_name) then
                     target_orbit_surface = surface
-                    log("[SE] Found matching space surface: " .. surface.name .. " (type: " .. zone_result.type .. ")")
-                    if player then player.print("Found space surface: " .. surface.name .. " (type: " .. zone_result.type .. ")") end
+                    --log("[SE] Found matching space surface: " .. surface.name .. " (type: " .. zone_result.type .. ")")
+                    --if player then player.print("Found space surface: " .. surface.name .. " (type: " .. zone_result.type .. ")") end
                     break
                 end
             end
         end
         
         if not target_orbit_surface then
-            log("[SE] Could not find space surface (orbit/asteroid-belt/asteroid-field) for planet: " .. planet_name)
-            if player then player.print("ERROR: Could not find space surface for " .. planet_name) end
+            --log("[SE] Could not find space surface (orbit/asteroid-belt/asteroid-field) for planet: " .. planet_name)
+            --if player then player.print("ERROR: Could not find space surface for " .. planet_name) end
             return available_vehicles
         end
     else
-        log("[SE] Player is on unknown zone type: " .. (player_zone.type or "unknown"))
-        if player then player.print("ERROR: Unknown zone type") end
+        --log("[SE] Player is on unknown zone type: " .. (player_zone.type or "unknown"))
+        --if player then player.print("ERROR: Unknown zone type") end
         return available_vehicles
     end
     
     -- Now search the target space surface for containers
     if target_orbit_surface then
-        log("[SE] Searching space surface: " .. target_orbit_surface.name)
-        if player then player.print("Searching space surface: " .. target_orbit_surface.name) end
+        --log("[SE] Searching space surface: " .. target_orbit_surface.name)
+        --if player then player.print("Searching space surface: " .. target_orbit_surface.name) end
         
         -- SE-SPECIFIC: Find deployment containers (ovd-deployment-container) on this space surface
         -- In SE, the container IS the hub - no need to check for separate hubs
@@ -167,9 +167,9 @@ function map_gui.find_orbital_vehicles(player_surface, player)
             -- No force filter - search all forces
         })
         
-        log("[SE] Found " .. #containers .. " deployment containers on space surface " .. target_orbit_surface.name)
+        --log("[SE] Found " .. #containers .. " deployment containers on space surface " .. target_orbit_surface.name)
         if player then 
-            player.print("Found " .. #containers .. " deployment containers on space surface " .. target_orbit_surface.name)
+            --player.print("Found " .. #containers .. " deployment containers on space surface " .. target_orbit_surface.name)
         end
         
         -- Process each container (container = hub in SE)
@@ -177,8 +177,8 @@ function map_gui.find_orbital_vehicles(player_surface, player)
             if container and container.valid then
                 hub_count = hub_count + 1
                 local container_info = "Container #" .. hub_count .. " at (" .. math.floor(container.position.x) .. ", " .. math.floor(container.position.y) .. ")"
-                log("[SE] " .. container_info)
-                if player then player.print(container_info) end
+                --log("[SE] " .. container_info)
+                --if player then player.print(container_info) end
                 
                 -- Try different inventory types but track which slots we've already processed
                 local processed_slots = {}
@@ -188,8 +188,8 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                     if inventory then
                         inventory_count = inventory_count + 1
                         local inv_info = "  Inventory type " .. inv_type .. " has " .. #inventory .. " slots"
-                        log("[SE] " .. inv_info)
-                        if player then player.print(inv_info) end
+                        --log("[SE] " .. inv_info)
+                        --if player then player.print(inv_info) end
                         
                         -- Scan the inventory for all vehicles
                         local slot_count = 0
@@ -199,16 +199,16 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                             if stack.valid_for_read then
                                 slot_count = slot_count + 1
                                 local slot_info = "    Slot " .. i .. ": " .. stack.name .. " x" .. stack.count
-                                log("[SE] " .. slot_info)
-                                if player then player.print(slot_info) end
+                                --log("[SE] " .. slot_info)
+                                --if player then player.print(slot_info) end
                                 
                                 -- Check if this is a vehicle
                                 local is_vehicle = vehicles_list.is_vehicle(stack.name)
 
                                 if is_vehicle then
                                     vehicle_slot_count = vehicle_slot_count + 1
-                                    log("[SE]      -> VEHICLE DETECTED: " .. stack.name)
-                                    if player then player.print("      -> VEHICLE: " .. stack.name) end
+                                    --log("[SE]      -> VEHICLE DETECTED: " .. stack.name)
+                                    --if player then player.print("      -> VEHICLE: " .. stack.name) end
                                 end
                                 
                                 -- Is it a spider vehicle? (for categorization/filtering)
@@ -216,8 +216,8 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                 
                                 if is_vehicle and not processed_slots[i] then
                                     processed_slots[i] = true
-                                    log("[SE]      -> ADDING TO VEHICLE LIST: " .. stack.name)
-                                    if player then player.print("      -> ADDING TO LIST: " .. stack.name) end
+                                    --log("[SE]      -> ADDING TO VEHICLE LIST: " .. stack.name)
+                                    --if player then player.print("      -> ADDING TO LIST: " .. stack.name) end
                                     
                                     -- Try to get the vehicle's custom name if available
                                     local name = stack.name:gsub("^%l", string.upper)
@@ -226,7 +226,7 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                     pcall(function()
                                         if stack.entity_label and stack.entity_label ~= "" then
                                             name = stack.entity_label
-                                            log("[SE] Found entity_label directly: " .. name)
+                                            --log("[SE] Found entity_label directly: " .. name)
                                         end
                                     end)
                                     
@@ -236,17 +236,17 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                             -- Try label from the stack
                                             if stack.label and stack.label ~= "" then
                                                 name = stack.label
-                                                log("[SE] Found label: " .. name)
+                                                --log("[SE] Found label: " .. name)
                                             -- Try to extract entity_label from item tags
                                             elseif stack.tags and stack.tags.entity_label then
                                                 name = stack.tags.entity_label
-                                                log("[SE] Found entity_label in tags: " .. name)
+                                                --log("[SE] Found entity_label in tags: " .. name)
                                             end
                                         end)
                                     end
                                     
                                     -- Add debug log for final extracted name
-                                    log("[SE] Final extracted vehicle name: " .. name)
+                                    --log("[SE] Final extracted vehicle name: " .. name)
                                     
                                     -- Try to get color info safely
                                     local color = nil  -- Only set if vehicle has a color
@@ -261,7 +261,7 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                     pcall(function()
                                         if stack.quality then
                                             quality = stack.quality
-                                            log("[SE] Found vehicle with quality: " .. quality.name)
+                                            --log("[SE] Found vehicle with quality: " .. quality.name)
                                         end
                                     end)
                                     
@@ -288,67 +288,67 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                         is_spider = is_spider_vehicle
                                     })
                                     
-                                    log("[SE] Added " .. name .. " to available vehicles list")
+                                    --log("[SE] Added " .. name .. " to available vehicles list")
                                 end
                             end
                         end
                         
                         -- Summary for this inventory
                         local inv_summary = "  Inventory summary: " .. slot_count .. " filled slots, " .. vehicle_slot_count .. " vehicles"
-                        log("[SE] " .. inv_summary)
-                        if player then player.print(inv_summary) end
+                        --log("[SE] " .. inv_summary)
+                        --if player then player.print(inv_summary) end
                     else
-                        log("[SE] No inventory found for type " .. inv_type)
-                        if player then player.print("  No inventory found for type " .. inv_type) end
+                        --log("[SE] No inventory found for type " .. inv_type)
+                        --if player then player.print("  No inventory found for type " .. inv_type) end
                     end
                 end
             end
         end
         
         if #containers == 0 then
-            log("[SE] No deployment containers found on space surface " .. target_orbit_surface.name)
-            if player then player.print("No deployment containers found on space surface " .. target_orbit_surface.name) end
+            --log("[SE] No deployment containers found on space surface " .. target_orbit_surface.name)
+            --if player then player.print("No deployment containers found on space surface " .. target_orbit_surface.name) end
         end
     end
     
     -- Summary log
     local summary = "===== SEARCH SUMMARY ====="
-    log("[SE] " .. summary)
-    if player then player.print(summary) end
+    --log("[SE] " .. summary)
+    --if player then player.print(summary) end
     
     local surface_info = "Player surface: " .. player_surface.name
-    log("[SE] " .. surface_info)
-    if player then player.print(surface_info) end
+    --log("[SE] " .. surface_info)
+    --if player then player.print(surface_info) end
     
     local orbits_info = "Orbits checked: " .. orbit_count
-    log("[SE] " .. orbits_info)
-    if player then player.print(orbits_info) end
+    --log("[SE] " .. orbits_info)
+    --if player then player.print(orbits_info) end
     
     local hubs_info = "Hubs found: " .. hub_count
-    log("[SE] " .. hubs_info)
-    if player then player.print(hubs_info) end
+    --log("[SE] " .. hubs_info)
+    --if player then player.print(hubs_info) end
     
     local inventories_info = "Inventories checked: " .. inventory_count
-    log("[SE] " .. inventories_info)
-    if player then player.print(inventories_info) end
+    --log("[SE] " .. inventories_info)
+    --if player then player.print(inventories_info) end
     
     local vehicles_info = "Vehicles found: " .. #available_vehicles
-    log("[SE] " .. vehicles_info)
-    if player then player.print(vehicles_info) end
+    --log("[SE] " .. vehicles_info)
+    --if player then player.print(vehicles_info) end
     
     local end_summary = "==========================="
-    log("[SE] " .. end_summary)
-    if player then player.print(end_summary) end
+    --log("[SE] " .. end_summary)
+    --if player then player.print(end_summary) end
     
     -- Debug log of all found vehicles
     local complete_info = "Search complete. Found " .. orbit_count .. " orbits, " .. hub_count .. " hubs, " .. inventory_count .. " inventories, and " .. #available_vehicles .. " vehicles above " .. player_surface.name
-    log("[SE] " .. complete_info)
-    if player then player.print(complete_info) end
+    --log("[SE] " .. complete_info)
+    --if player then player.print(complete_info) end
     
     for i, vehicle in ipairs(available_vehicles) do
         local vehicle_info = "Vehicle " .. i .. ": " .. vehicle.name .. " (" .. vehicle.vehicle_name .. ")"
-        log("[SE] " .. vehicle_info)
-        if player then player.print(vehicle_info) end
+        --log("[SE] " .. vehicle_info)
+        --if player then player.print(vehicle_info) end
     end
     
     return available_vehicles
@@ -1158,20 +1158,20 @@ function map_gui.scan_platform_inventory(vehicle_data)
     
     -- If hub is not valid, return empty results
     if not hub or not hub.valid then
-        log("[SE] Hub is not valid when scanning inventory")
+        --log("[SE] Hub is not valid when scanning inventory")
         return available_items
     end
     
-    log("[SE] Scanning inventory of hub on space surface: " .. vehicle_data.platform_name)
+    --log("[SE] Scanning inventory of hub on space surface: " .. vehicle_data.platform_name)
     
     -- Only use chest inventory to avoid duplicates
     local inventory = hub.get_inventory(defines.inventory.chest)
     if not inventory then
-        log("[SE] No chest inventory found on hub")
+        --log("[SE] No chest inventory found on hub")
         return available_items
     end
     
-    log("[SE] Hub inventory has " .. #inventory .. " slots")
+    --log("[SE] Hub inventory has " .. #inventory .. " slots")
     
     -- Scan each slot for items and their qualities
     for i = 1, #inventory do
@@ -1191,7 +1191,7 @@ function map_gui.scan_platform_inventory(vehicle_data)
                             quality_name = stack.quality.name
                             quality_level = stack.quality.level
                             quality_color = stack.quality.color
-                            log("[SE] Item has quality: " .. quality_name .. " (level " .. quality_level .. ")")
+                            --log("[SE] Item has quality: " .. quality_name .. " (level " .. quality_level .. ")")
                         end
                     end)
                     
@@ -1214,7 +1214,7 @@ function map_gui.scan_platform_inventory(vehicle_data)
                     available_items[item_name].total = 
                         available_items[item_name].total + stack.count
                     
-                    log("[SE] Found " .. stack.count .. " " .. quality_name .. " quality " .. item_name .. " in slot " .. i)
+                    --log("[SE] Found " .. stack.count .. " " .. quality_name .. " quality " .. item_name .. " in slot " .. i)
                 end
             end
         end
@@ -1222,9 +1222,9 @@ function map_gui.scan_platform_inventory(vehicle_data)
     
     -- Log summary
     for item_name, info in pairs(available_items) do
-        log("[SE] Total " .. item_name .. ": " .. info.total)
+        --log("[SE] Total " .. item_name .. ": " .. info.total)
         for quality_key, quality_data in pairs(info.by_quality) do
-            log("[SE]   - " .. quality_data.name .. " (level " .. quality_data.level .. "): " .. quality_data.count)
+            --  log("[SE]   - " .. quality_data.name .. " (level " .. quality_data.level .. "): " .. quality_data.count)
         end
     end
     
@@ -1318,23 +1318,23 @@ local function handle_extras_menu_clicks(event)
     
     -- Skip extras button (deploy without extras)
     if element.name == "skip_extras_btn" then
-        player.print("========== SKIP EXTRAS BUTTON CLICKED ==========")
-        player.print("Player: " .. player.name)
+        --player.print("========== SKIP EXTRAS BUTTON CLICKED ==========")
+        --player.print("Player: " .. player.name)
         
         -- Get the deployment data
         local deployment_data = storage.temp_deployment_data
         if not deployment_data then
-            player.print("ERROR: No deployment data found in storage")
+            --player.print("ERROR: No deployment data found in storage")
             return
         end
         
-        player.print("Deployment data found:")
-        player.print("  Vehicle name: " .. (deployment_data.vehicle.name or "unknown"))
-        player.print("  Deploy target: " .. (deployment_data.deploy_target or "unknown"))
-        player.print("  Hub entity: " .. (deployment_data.vehicle.hub and deployment_data.vehicle.hub.name or "nil"))
+        --player.print("Deployment data found:")
+        --player.print("  Vehicle name: " .. (deployment_data.vehicle.name or "unknown"))
+        --player.print("  Deploy target: " .. (deployment_data.deploy_target or "unknown"))
+        --player.print("  Hub entity: " .. (deployment_data.vehicle.hub and deployment_data.vehicle.hub.name or "nil"))
         if deployment_data.vehicle.hub then
-            player.print("  Hub unit_number: " .. (deployment_data.vehicle.hub.unit_number or "nil"))
-            player.print("  Hub valid: " .. tostring(deployment_data.vehicle.hub.valid))
+            --player.print("  Hub unit_number: " .. (deployment_data.vehicle.hub.unit_number or "nil"))
+            --player.print("  Hub valid: " .. tostring(deployment_data.vehicle.hub.valid))
         end
         
         -- Close the extras menu
@@ -1342,36 +1342,36 @@ local function handle_extras_menu_clicks(event)
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
         
-        player.print("Calling deploy_spider_vehicle()...")
+        --player.print("Calling deploy_spider_vehicle()...")
         -- Deploy the vehicle without extras
         deployment.deploy_spider_vehicle(player, deployment_data.vehicle, deployment_data.deploy_target)
         
         -- Clear the temp data
         storage.temp_deployment_data = nil
-        player.print("========== SKIP EXTRAS COMPLETE ==========")
+        --player.print("========== SKIP EXTRAS COMPLETE ==========")
         
         return
     end
     
     -- Confirm deployment with extras
     if element.name == "confirm_deploy_with_extras_btn" then
-        player.print("========== CONFIRM DEPLOY WITH EXTRAS BUTTON CLICKED ==========")
-        player.print("Player: " .. player.name)
+        --player.print("========== CONFIRM DEPLOY WITH EXTRAS BUTTON CLICKED ==========")
+        --player.print("Player: " .. player.name)
         
         -- Get the deployment data
         local deployment_data = storage.temp_deployment_data
         if not deployment_data then
-            player.print("ERROR: No deployment data found in storage")
+            --player.print("ERROR: No deployment data found in storage")
             return
         end
         
-        player.print("Deployment data found:")
-        player.print("  Vehicle name: " .. (deployment_data.vehicle.name or "unknown"))
-        player.print("  Deploy target: " .. (deployment_data.deploy_target or "unknown"))
-        player.print("  Hub entity: " .. (deployment_data.vehicle.hub and deployment_data.vehicle.hub.name or "nil"))
+        --player.print("Deployment data found:")
+        --player.print("  Vehicle name: " .. (deployment_data.vehicle.name or "unknown"))
+        --player.print("  Deploy target: " .. (deployment_data.deploy_target or "unknown"))
+        --player.print("  Hub entity: " .. (deployment_data.vehicle.hub and deployment_data.vehicle.hub.name or "nil"))
         if deployment_data.vehicle.hub then
-            player.print("  Hub unit_number: " .. (deployment_data.vehicle.hub.unit_number or "nil"))
-            player.print("  Hub valid: " .. tostring(deployment_data.vehicle.hub.valid))
+            --player.print("  Hub unit_number: " .. (deployment_data.vehicle.hub.unit_number or "nil"))
+            --player.print("  Hub valid: " .. tostring(deployment_data.vehicle.hub.valid))
         end
     
         -- Build a list of selected extras
@@ -1401,7 +1401,7 @@ local function handle_extras_menu_clicks(event)
         local frame = player.gui.screen["spidertron_extras_frame"]
         if frame and frame.valid then
             find_text_fields(frame, text_fields)
-            player.print("Found " .. #text_fields .. " text fields in extras menu")
+            --player.print("Found " .. #text_fields .. " text fields in extras menu")
             
             -- Process each text field
             for _, field in pairs(text_fields) do
@@ -1416,22 +1416,22 @@ local function handle_extras_menu_clicks(event)
                             count = count,
                             quality = quality
                         })
-                        player.print("Selected extra: " .. count .. "x " .. quality .. " " .. item_name)
+                        --player.print("Selected extra: " .. count .. "x " .. quality .. " " .. item_name)
                     end
                 end
             end
         else
-            player.print("WARNING: Extras frame not found or invalid")
+            --player.print("WARNING: Extras frame not found or invalid")
         end
         
-        player.print("Total extras selected: " .. #selected_extras)
+        --player.print("Total extras selected: " .. #selected_extras)
     
         -- Close the extras menu
         if player.gui.screen["spidertron_extras_frame"] then
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
     
-        player.print("Calling deploy_spider_vehicle() with " .. #selected_extras .. " extras...")
+        --player.print("Calling deploy_spider_vehicle() with " .. #selected_extras .. " extras...")
         -- Deploy the vehicle with extras
         deployment.deploy_spider_vehicle(
             player, 
@@ -1442,7 +1442,7 @@ local function handle_extras_menu_clicks(event)
     
         -- Clear the temp data
         storage.temp_deployment_data = nil
-        player.print("========== CONFIRM DEPLOY WITH EXTRAS COMPLETE ==========")
+        --player.print("========== CONFIRM DEPLOY WITH EXTRAS COMPLETE ==========")
     
         return
     end
@@ -1456,7 +1456,7 @@ function map_gui.on_gui_click(event)
     local player = game.get_player(event.player_index)
     if not player then return end
 
-    log("[SE] GUI click on element: " .. element.name)
+    --log("[SE] GUI click on element: " .. element.name)
 
     -- Handle extras menu clicks
     if element.name == "close_extras_menu_btn" or 
@@ -1469,7 +1469,7 @@ function map_gui.on_gui_click(event)
 
     -- Close deployment menu button
     if element.name == "close_deployment_menu_btn" then
-        log("[SE] Close deployment menu button clicked")
+        --log("[SE] Close deployment menu button clicked")
         if player.gui.screen["spidertron_deployment_frame"] then
             player.gui.screen["spidertron_deployment_frame"].destroy()
         end
@@ -1480,7 +1480,7 @@ function map_gui.on_gui_click(event)
     local target_index_str = string.match(element.name, "^deploy_target_(%d+)$")
     if target_index_str then
         local index = tonumber(target_index_str)
-        log("[SE] Deploy to target triggered for index: " .. index)
+        --log("[SE] Deploy to target triggered for index: " .. index)
 
         if index and storage.spidertrons and storage.spidertrons[index] then
             local vehicle = storage.spidertrons[index]
@@ -1500,7 +1500,7 @@ function map_gui.on_gui_click(event)
     local player_index_str = string.match(element.name, "^deploy_player_(%d+)$")
     if player_index_str then
         local index = tonumber(player_index_str)
-        log("[SE] Deploy to player triggered for index: " .. index)
+        --log("[SE] Deploy to player triggered for index: " .. index)
 
         if index and storage.spidertrons and storage.spidertrons[index] then
             local vehicle = storage.spidertrons[index]

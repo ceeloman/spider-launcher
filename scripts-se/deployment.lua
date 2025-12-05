@@ -3,6 +3,17 @@
 
 local deployment = {}
 
+-- Find first available planet from the pool
+local function get_available_planet()
+    for i = 1, 40 do
+        local planet = game.planets["ovd-se-planet-" .. i]
+        if planet and not planet.surface then
+            return planet
+        end
+    end
+    return nil
+end
+
 -- Helper function to check if a zone type is a space type (where deployment is not allowed)
 local function is_space_zone_type(zone_type)
     return zone_type == "orbit" or zone_type == "asteroid-belt" or zone_type == "asteroid-field"
@@ -41,6 +52,17 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     local stack = inventory[inventory_slot]
     if not stack or not stack.valid_for_read or stack.name ~= vehicle_item_name then
         return
+    end
+    
+    -- In deploy_spider_vehicle, check if surface needs planet
+    if not player.surface.planet then
+        local available_planet = get_available_planet()
+        if available_planet then
+            available_planet.associate_surface(player.surface)
+        else
+            -- No available planets - silently abort
+            return
+        end
     end
     
     -- SE-SPECIFIC: Check if deployment target is a space zone (cannot deploy on orbit, asteroid-belt, or asteroid-field)
@@ -494,20 +516,38 @@ end
     if success and result and result.valid then
         cargo_pod = result
         
-        -- Set cargo pod destination to the player's surface at the random location
-        local dest_success = pcall(function()
-            cargo_pod.cargo_pod_destination = {
-                type = defines.cargo_destination.surface,
-                surface = player.surface,
-                position = landing_pos,
-                land_at_exact_position = true
-            }
-        end)
+        -- NEW: Detect same-surface deployment and use surface-switching trick
+        local actual_surface = player.surface
+        local actual_position = landing_pos
+        local is_same_surface = (player.surface == hub.surface)
+        local temp_destination_surface = actual_surface
         
-        if not dest_success then
-            cargo_pod.destroy()
-            return
+        if is_same_surface then
+            -- Same surface deployment - temporarily target nauvis to avoid intermezzo
+            local nauvis = game.surfaces["nauvis"]
+            if nauvis and nauvis ~= actual_surface then
+                temp_destination_surface = nauvis
+            else
+                -- Find any other surface if nauvis is not available
+                for _, surface in pairs(game.surfaces) do
+                    if surface ~= actual_surface then
+                        temp_destination_surface = surface
+                        break
+                    end
+                end
+            end
         end
+        
+        -- Set cargo pod destination (use temp surface if same-surface deployment)
+        cargo_pod.cargo_pod_destination = {
+            type = defines.cargo_destination.surface,
+            surface = temp_destination_surface,
+            position = actual_position,
+            land_at_exact_position = true
+        }
+        
+        
+        --game.print("[OVD] Cargo pod destination set successfully")
         
         -- Set cargo pod origin to the cargo hatch (or cargo-bay as fallback)
         local origin_success = pcall(function()
@@ -531,18 +571,28 @@ end
         -- Save the pod deployment information
         storage.pending_pod_deployments[pod_id] = {
             pod = cargo_pod,
-            pod_unit_number = cargo_pod.unit_number,  -- Store unit_number for matching
+            pod_unit_number = cargo_pod.unit_number,
             vehicle_name = vehicle_data.name,
             vehicle_color = vehicle_data.color,
             has_grid = has_grid,
             grid_data = grid_data,
-            quality = quality,  -- Store the actual quality object
-            quality_name = quality_name,  -- Also store the name as backup
+            quality = quality,
+            quality_name = quality_name,
             player = player,
-            entity_name = entity_name,  -- The actual entity name to create
-            item_name = vehicle_item_name,  -- The item name
-            extras = collected_extras  -- Store the extra items to deploy (with qualities)
+            entity_name = entity_name,
+            item_name = vehicle_item_name,
+            extras = collected_extras,
+            -- Same-surface deployment data
+            actual_surface = is_same_surface and actual_surface or nil,
+            actual_position = is_same_surface and actual_position or nil
         }
+        
+        -- If this is same-surface deployment, we'll fix the destination after finished ascending
+        -- The destination will be changed in the on_cargo_pod_finished_ascending event handler (see control.lua)
+        if needs_destination_fix then
+            --game.print("[OVD] Pod marked for destination fix after ascending (pod_id: " .. pod_id .. ")")
+            --game.print("[OVD] Original destination will be: " .. original_destination_surface.name .. " at (" .. landing_pos.x .. ", " .. landing_pos.y .. ")")
+        end
         
         return
     end
@@ -570,6 +620,7 @@ function deployment.on_cargo_pod_finished_descending(event)
             end
             
             if matches then
+
                 -- Get the deployment information
                 local player = deployment_data.player
                 local vehicle_name = deployment_data.vehicle_name
@@ -805,4 +856,8 @@ function deployment.on_cargo_pod_finished_descending(event)
 end
 
 return deployment
+
+
+
+
 

@@ -133,7 +133,7 @@ end
 -- Show spidertron selection dialog
 function platform_gui.show_selection_dialog(player, spidertrons)
     if #spidertrons == 0 then
-        player.print("No spidertrons are available in orbit.")
+        --player.print("No spidertrons are available in orbit.")
         return
     end
     
@@ -214,7 +214,7 @@ function platform_gui.on_gui_click(event)
         end
         
         -- Deploy the selected spidertron (placeholder for now)
-        player.print("Spidertron deployment commencing for: " .. spidertron.name)
+        --player.print("Spidertron deployment commencing for: " .. spidertron.name)
     elseif element.name == "cancel_selection" then
         -- Close the selection dialog
         if player.gui.screen["spidertron_selection_frame"] then

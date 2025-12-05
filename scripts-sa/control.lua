@@ -117,7 +117,7 @@ script.on_event(defines.events.on_gui_click, function(event)
             slider.slider_value = new_value
             text_field.text = tostring(new_value)
             
-            player.print("Added " .. stack_size .. " " .. item_name .. ". New amount: " .. new_value)
+            --player.print("Added " .. stack_size .. " " .. item_name .. ". New amount: " .. new_value)
             return
         else
             debug_log("Could not find slider or text field: " .. slider_name .. ", " .. text_field_name)
@@ -277,7 +277,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         -- Find orbital spider vehicles
         local vehicles = map_gui.find_orbital_vehicles(player.surface)
         if #vehicles == 0 then
-            player.print("No vehicles are deployable to this surface.")
+            --player.print("No vehicles are deployable to this surface.")
             return
         end
         
@@ -291,7 +291,7 @@ commands.add_command("test_deploy_message", "Test spider vehicle deployment mess
     local player = game.get_player(command.player_index)
     if not player then return end
     
-    player.print("Spider vehicle deployment commencing for: Test Spider")
+    --player.print("Spider vehicle deployment commencing for: Test Spider")
     
     local success, err = pcall(function()
         local text = player.surface.create_entity({
@@ -303,9 +303,9 @@ commands.add_command("test_deploy_message", "Test spider vehicle deployment mess
     end)
     
     if not success then
-        player.print("Error creating flying text: " .. tostring(err))
+        --player.print("Error creating flying text: " .. tostring(err))
     else
-        player.print("Flying text created successfully")
+        --player.print("Flying text created successfully")
     end
 end)
 
@@ -410,29 +410,29 @@ commands.add_command("debug_hub_inventory", "Debug hub inventory items", functio
         return 
     end
     
-    player.print("Scanning hub inventories for debugging...")
+    --player.print("Scanning hub inventories for debugging...")
     
     -- Try to find the vehicle data from storage
     if not storage.spidertrons or #storage.spidertrons == 0 then
-        player.print("No vehicles found in storage.spidertrons")
+        --player.print("No vehicles found in storage.spidertrons")
         return
     end
     
     -- Get the first vehicle's hub for testing
     local hub = storage.spidertrons[1].hub
     if not hub or not hub.valid then
-        player.print("Hub is not valid")
+        --player.print("Hub is not valid")
         return
     end
     
-    player.print("Found hub on platform: " .. storage.spidertrons[1].platform_name)
+    --player.print("Found hub on platform: " .. storage.spidertrons[1].platform_name)
     
     -- Try chest inventory
     local inventory = hub.get_inventory(defines.inventory.chest)
     if not inventory then
-        player.print("No chest inventory found")
+        --player.print("No chest inventory found")
     else
-        player.print("Chest inventory has " .. #inventory .. " slots")
+        --player.print("Chest inventory has " .. #inventory .. " slots")
         
         -- Scan each slot
         for i = 1, #inventory do
@@ -445,7 +445,7 @@ commands.add_command("debug_hub_inventory", "Debug hub inventory items", functio
                     end
                 end)
                 
-                player.print("Slot " .. i .. ": " .. stack.name .. " x" .. stack.count .. " (" .. quality_str .. ")")
+                --player.print("Slot " .. i .. ": " .. stack.name .. " x" .. stack.count .. " (" .. quality_str .. ")")
             end
         end
     end

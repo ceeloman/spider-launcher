@@ -57,17 +57,17 @@ function map_gui.find_orbital_vehicles(player_surface)
     local hub_count = 0
     local inventory_count = 0
     
-    log("Searching for orbital vehicles above " .. player_surface.name .. "...")
+    -- log("Searching for orbital vehicles above " .. player_surface.name .. "...")
     
     -- Iterate through all surfaces to find platforms
     for _, surface in pairs(game.surfaces) do
         -- Debug info for each surface
-        log("Checking surface: " .. surface.name)
+        -- log("Checking surface: " .. surface.name)
         
         -- Check if this is a platform surface
         if surface.platform then
             platform_count = platform_count + 1
-            log("Found platform #" .. platform_count .. ": " .. surface.name)
+            -- log("Found platform #" .. platform_count .. ": " .. surface.name)
             
             -- Check if the platform is orbiting the player's current surface
             local is_orbiting_current_planet = false
@@ -78,29 +78,29 @@ function map_gui.find_orbital_vehicles(player_surface)
                 
                 -- Log the space_location for debugging
                 local location_str = tostring(platform_location)
-                log("Platform space_location: " .. location_str)
+                -- log("Platform space_location: " .. location_str)
                 
                 -- Extract the planet name from the location string
                 -- Pattern looks for text between ": " and " (planet)"
                 local orbiting_planet = location_str:match(": ([^%(]+) %(planet%)")
                 
                 if orbiting_planet then
-                    log("Platform is orbiting planet: " .. orbiting_planet)
+                    -- log("Platform is orbiting planet: " .. orbiting_planet)
                     
                     -- Check if this platform is orbiting the current planet
                     if orbiting_planet == player_surface.name then
                         is_orbiting_current_planet = true
-                        log("Platform is orbiting the current planet")
+                        -- log("Platform is orbiting the current planet")
                     else
-                        log("Platform is NOT orbiting the current planet")
+                        -- log("Platform is NOT orbiting the current planet")
                     end
                 else
-                    log("Could not determine which planet this platform is orbiting")
+                    -- log("Could not determine which planet this platform is orbiting")
                     -- If we can't determine, let's include it to be safe
                     is_orbiting_current_planet = true
                 end
             else
-                log("Platform has no space_location property")
+                -- log("Platform has no space_location property")
                 -- If no space_location is specified, assume it's valid
                 is_orbiting_current_planet = true
             end
@@ -110,7 +110,7 @@ function map_gui.find_orbital_vehicles(player_surface)
                 -- Check if the platform has a hub
                 if surface.platform.hub and surface.platform.hub.valid then
                     hub_count = hub_count + 1
-                    log("Found valid hub #" .. hub_count)
+                    -- log("Found valid hub #" .. hub_count)
                     
                     -- Check for vehicles in the hub's inventory
                     local hub = surface.platform.hub
@@ -122,19 +122,19 @@ function map_gui.find_orbital_vehicles(player_surface)
                         local inventory = hub.get_inventory(inv_type)
                         if inventory then
                             inventory_count = inventory_count + 1
-                            log("Found inventory type " .. inv_type .. " with " .. #inventory .. " slots")
+                            -- log("Found inventory type " .. inv_type .. " with " .. #inventory .. " slots")
                             
                             -- Scan the inventory for all vehicles
                             for i = 1, #inventory do
                                 local stack = inventory[i]
                                 if stack.valid_for_read then
-                                    log("Slot " .. i .. " contains: " .. stack.name .. " x" .. stack.count)
+                                    -- log("Slot " .. i .. " contains: " .. stack.name .. " x" .. stack.count)
                                     
                                     -- Check if this is a vehicle - for now, include everything
                                     local is_vehicle = vehicles_list.is_vehicle(stack.name)
 
                                     if is_vehicle then
-                                        log("Found vehicle in slot " .. i .. ": " .. stack.name)
+                                        -- log("Found vehicle in slot " .. i .. ": " .. stack.name)
                                     end
                                     
                                     -- Optionally use a more selective check if you implement it:
@@ -145,7 +145,7 @@ function map_gui.find_orbital_vehicles(player_surface)
                                     
                                     if is_vehicle and not processed_slots[i] then
                                         processed_slots[i] = true
-                                        log("ADDING VEHICLE: " .. stack.name .. " to available vehicles list")
+                                        -- log("ADDING VEHICLE: " .. stack.name .. " to available vehicles list")
                                         
                                         -- Try to get the vehicle's custom name if available
                                         local name = stack.name:gsub("^%l", string.upper)
@@ -154,7 +154,7 @@ function map_gui.find_orbital_vehicles(player_surface)
                                         pcall(function()
                                             if stack.entity_label and stack.entity_label ~= "" then
                                                 name = stack.entity_label
-                                                log("Found entity_label directly: " .. name)
+                                                -- log("Found entity_label directly: " .. name)
                                             end
                                         end)
                                         
@@ -164,17 +164,17 @@ function map_gui.find_orbital_vehicles(player_surface)
                                                 -- Try label from the stack
                                                 if stack.label and stack.label ~= "" then
                                                     name = stack.label
-                                                    log("Found label: " .. name)
+                                                    -- log("Found label: " .. name)
                                                 -- Try to extract entity_label from item tags
                                                 elseif stack.tags and stack.tags.entity_label then
                                                     name = stack.tags.entity_label
-                                                    log("Found entity_label in tags: " .. name)
+                                                    -- log("Found entity_label in tags: " .. name)
                                                 end
                                             end)
                                         end
                                         
                                         -- Add debug log for final extracted name
-                                        log("Final extracted vehicle name: " .. name)
+                                        -- log("Final extracted vehicle name: " .. name)
                                         
                                         -- Try to get color info safely
                                         local color = {r=1, g=0.5, b=0.0}  -- Default color
@@ -189,7 +189,7 @@ function map_gui.find_orbital_vehicles(player_surface)
                                         pcall(function()
                                             if stack.quality then
                                                 quality = stack.quality
-                                                log("Found vehicle with quality: " .. quality.name)
+                                                -- log("Found vehicle with quality: " .. quality.name)
                                             end
                                         end)
                                         
@@ -215,30 +215,30 @@ function map_gui.find_orbital_vehicles(player_surface)
                                             is_spider = is_spider_vehicle
                                         })
                                         
-                                        log("Added " .. name .. " to available vehicles list")
+                                        -- log("Added " .. name .. " to available vehicles list")
                                     end
                                 end
                             end
                         else
-                            log("No inventory found for type " .. inv_type)
+                            -- log("No inventory found for type " .. inv_type)
                         end
                     end
                 else
-                    log("Platform has no valid hub")
+                    -- log("Platform has no valid hub")
                 end
             else
-                log("Skipping platform as it's not orbiting the current planet")
+                -- log("Skipping platform as it's not orbiting the current planet")
             end
         else
-            log("Not a platform surface")
+            -- log("Not a platform surface")
         end
     end
     
     -- Debug log of all found vehicles
-    log("Search complete. Found " .. platform_count .. " platforms, " .. hub_count .. " hubs, " .. inventory_count .. " inventories, and " .. #available_vehicles .. " vehicles above " .. player_surface.name)
+    -- log("Search complete. Found " .. platform_count .. " platforms, " .. hub_count .. " hubs, " .. inventory_count .. " inventories, and " .. #available_vehicles .. " vehicles above " .. player_surface.name)
     
     for i, vehicle in ipairs(available_vehicles) do
-        log("Vehicle " .. i .. ": " .. vehicle.name .. " (" .. vehicle.vehicle_name .. ")")
+        -- log("Vehicle " .. i .. ": " .. vehicle.name .. " (" .. vehicle.vehicle_name .. ")")
     end
     
     return available_vehicles
