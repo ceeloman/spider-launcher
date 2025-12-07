@@ -123,7 +123,7 @@ script.on_event(defines.events.on_gui_click, function(event)
         local section_table
         local current = element
         while current and current.valid do
-            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" then
+            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" then
                 section_table = current
                 break
             end
@@ -131,7 +131,7 @@ script.on_event(defines.events.on_gui_click, function(event)
         end
         
         if not section_table then
-            debug_log("Could not find section table (utilities_table, ammo_table, or fuel_table) for stack button")
+            debug_log("Could not find section table (utilities_table, ammo_table, or fuel_table, or equipment_table) for stack button")
             return
         end
         
@@ -201,7 +201,7 @@ script.on_event(defines.events.on_gui_value_changed, function(event)
         local section_table
         local current = element
         while current and current.valid do
-            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" then
+            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" then
                 section_table = current
                 break
             end

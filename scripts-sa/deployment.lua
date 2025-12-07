@@ -151,7 +151,7 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
             })
         end
     end
-    
+
     -- Merge defaults equipment_grid into grid_data if provided
     if defaults and defaults.equipment_grid and #defaults.equipment_grid > 0 then
         for _, equip_config in ipairs(defaults.equipment_grid) do
@@ -169,6 +169,43 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
         if #grid_data > 0 then
             has_grid = true
         end
+    end
+
+    --[TFMG] add grid items into grid
+
+    for _,item in pairs(extras) do
+        if item.in_grid then
+            local count = item.count or 1
+            for i = 1, count do
+                table.insert(grid_data, {
+                    name = item.in_grid.name,
+                    position = nil,  -- Let grid.put find a position
+                    energy = nil,
+                    quality = item.quality,
+                    item_fallback_name = item.name
+                })
+            end
+            --extras[_] = nil
+        end
+    end
+
+    --check if everything we want to place in the grid could possibly fit
+    local grid_size = 0
+    local grid_prototype = prototypes.entity[vehicle_data.entity_name].grid_prototype
+    if grid_prototype then
+        grid_size = (grid_prototype.width + vehicle_data.quality.equipment_grid_width_bonus) * (grid_prototype.height + vehicle_data.quality.equipment_grid_height_bonus)
+    end
+    local item_volume = 0
+    for _,grid_item in pairs(grid_data) do
+        local grid_prototype = prototypes.equipment[grid_item.name]
+        local item_size = 0
+        if grid_prototype.shape.points then
+            item_size = #grid_prototype.shape.points
+        else
+            item_size = (grid_prototype.shape.width * grid_prototype.shape.height)
+        end
+        item_volume = item_volume + item_size
+        if item_volume > grid_size then player.print("Cannot deploy with requested items: selected grid equipment will not fit into vehicle grid") return end
     end
     
     -- Store quality name
@@ -377,27 +414,27 @@ end
     -- Remove the vehicle from the hub inventory
     stack.count = stack.count - 1
     
-    -- TFMG compatibility: If deploying scout-o-tron-pod, also remove scout-o-tron
+    -- TFMG compatibility: If deploying scout-o-tron-pod, also remove scout-o-tron --not needed anymore
     -- If deploying scout-o-tron, also remove scout-o-tron-pod
-    if vehicle_item_name == "scout-o-tron-pod" then
-        -- Remove scout-o-tron if it exists
-        for i = 1, #inventory do
-            local other_stack = inventory[i]
-            if other_stack.valid_for_read and other_stack.name == "scout-o-tron" then
-                other_stack.count = other_stack.count - 1
-                break
-            end
-        end
-    elseif vehicle_item_name == "scout-o-tron" then
-        -- Remove scout-o-tron-pod if it exists
-        for i = 1, #inventory do
-            local other_stack = inventory[i]
-            if other_stack.valid_for_read and other_stack.name == "scout-o-tron-pod" then
-                other_stack.count = other_stack.count - 1
-                break
-            end
-        end
-    end
+    --if vehicle_item_name == "scout-o-tron-pod" then
+    --    -- Remove scout-o-tron if it exists
+    --    for i = 1, #inventory do
+    --        local other_stack = inventory[i]
+    --        if other_stack.valid_for_read and other_stack.name == "scout-o-tron" then
+    --            other_stack.count = other_stack.count - 1
+    --            break
+    --        end
+    --    end
+    --elseif vehicle_item_name == "scout-o-tron" then
+    --    -- Remove scout-o-tron-pod if it exists
+    --    for i = 1, #inventory do
+    --        local other_stack = inventory[i]
+    --        if other_stack.valid_for_read and other_stack.name == "scout-o-tron-pod" then
+    --            other_stack.count = other_stack.count - 1
+    --            break
+    --        end
+    --    end
+    --end
     
     -- If extras were requested, collect them with their qualities preserved
     -- Skip collection for API calls - items are in pod recipe, not separate inventory items
@@ -571,8 +608,10 @@ end
                     name = item_to_insert,
                     count = 1
                 }
-                if quality and type(quality) == "table" and quality.name then
+                if quality and type(quality) == "table" and quality.name then --idk if this is still important, so im not gonna touch it
                     insert_data.quality = quality
+                elseif quality and type(quality) == "userdata" then --a quality prototype is actually a userdata table
+                    insert_data.quality = quality.name
                 end
                 pod_inventory.insert(insert_data)
             end)
@@ -779,6 +818,16 @@ function deployment.on_cargo_pod_finished_descending(event)
                         script.on_nth_tick(5, nil)  -- Clear the handler
                     end)
                 end
+
+                --moved this up, so that we have the vehichle inventory available for our equipment grid filling.
+                local vehicle_inventory = nil
+                pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.car_trunk) end)
+                if not vehicle_inventory then
+                    pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_trunk) end)
+                end
+                if not vehicle_inventory then
+                    pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.chest) end)
+                end
                 
                 -- Transfer equipment grid using stored data
                 -- Check if we have grid_data to apply (either from vehicle or defaults)
@@ -789,7 +838,7 @@ function deployment.on_cargo_pod_finished_descending(event)
                         local new_equipment = nil
                         
                         -- First try creating with quality if available
-                        if equip_data.quality_name then
+                        if equip_data.quality then
                             pcall(function()
                                 new_equipment = target_grid.put({
                                     name = equip_data.name,
@@ -811,11 +860,17 @@ function deployment.on_cargo_pod_finished_descending(event)
                         -- If that fails, try to put it somewhere else in the grid
                         if not new_equipment then
                             new_equipment = target_grid.put({name = equip_data.name})
-                        end
+                        end                            
                         
                         -- Set energy level if successful
                         if new_equipment and new_equipment.valid and equip_data.energy then
                             new_equipment.energy = equip_data.energy
+                        end
+
+                        if not new_equipment then --if we do fail to put the equipment anywhere, we'll go ahead and drop it in the trunk
+                            vehicle_inventory.insert({
+                                name = equip_data.item_fallback_name, count = 1, quality = equip_data.quality
+                            })
                         end
                         
                     end
@@ -909,14 +964,7 @@ function deployment.on_cargo_pod_finished_descending(event)
                     end
                     
                     -- Place items in the vehicle's inventory if possible
-                    local vehicle_inventory = nil
-                    pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.car_trunk) end)
-                    if not vehicle_inventory then
-                        pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_trunk) end)
-                    end
-                    if not vehicle_inventory then
-                        pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.chest) end)
-                    end
+                    --moved getting inventory to earlier.
 
                     -- Check for ammo inventory (guns)
                     local ammo_inventory = nil
@@ -1073,7 +1121,10 @@ function deployment.on_cargo_pod_finished_descending(event)
                                 if extra.quality and type(extra.quality) == "table" then
                                     insert_data.quality = extra.quality
                                 end
-                                local inserted = vehicle_inventory.insert(insert_data)
+                                local inserted = 0
+                                if not prototypes.item[insert_data.name].place_as_equipment_result then --if its an equipment grid item, dont insert it into the inventory
+                                    inserted = vehicle_inventory.insert(insert_data)
+                                end
                                 if inserted > 0 then
                                     --player.print("Added " .. inserted .. "x " .. extra.quality .. " " .. extra.name .. " to vehicle inventory")
                                 end

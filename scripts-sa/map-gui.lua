@@ -7,17 +7,20 @@ local map_gui = {}
 
 -- Helper functions
 
+local function sprite_exists(sprite_name)
+    local success = pcall(function()
+        helpers.is_valid_sprite_path(sprite_name)
+    end)
+    return success
+end
+
 local function get_sprite_name(item_name)
     -- Check if we have a custom sprite for this item
     local custom_sprite = "sl-" .. item_name
+    if not sprite_exists(custom_sprite) then --if we dont have a custom sprite, fallback on the item sprite or something, idk. -ooba
+        custom_sprite = "item/"..item_name
+    end
     return custom_sprite
-end
-
-local function sprite_exists(sprite_name)
-    local success = pcall(function()
-        game.is_valid_sprite_path(sprite_name)
-    end)
-    return success
 end
 
 -- Cache for the ammo category mapping
@@ -527,6 +530,79 @@ function map_gui.show_deployment_menu(player, vehicles)
     storage.spidertrons = vehicles  -- Keeping the same storage variable name for compatibility
 end
 
+--putting it here cause fuck it
+
+local function match_in_list(list,string) --finds if theres a matching string in list, returns true if so, since we do alot of that, it makes sense to compact it to a function
+    for _,name in pairs(list) do
+        if name == string then return true end
+    end
+return false end
+
+local function list_match_list(list,list_2) --this checks if theres any match between two lists
+    for _,string in pairs(list_2) do
+        if match_in_list(list,string) then return true end
+    end
+return false end
+
+
+function map_gui.list_compatible_items_in_inventory(inventory,compatible_items_list,available_items)
+    if not inventory then return game.print("inventory was nil") end
+    local match_list = {}
+
+    for i = 1, #inventory do
+        local stack = inventory[i]
+        if stack and stack.valid_for_read then
+            if match_in_list(compatible_items_list,stack.name) then
+                if not available_items[stack.name] then
+                    available_items[stack.name] = {
+                        total = 0,
+                        by_quality = {}
+                    }
+                end
+                local quality_name = "Normal"
+                local quality_level = 1
+                local quality_color = {r=1, g=1, b=1}
+                pcall(function()
+                    if stack.quality then
+                        quality_name = stack.quality.name
+                        quality_level = stack.quality.level
+                        quality_color = stack.quality.color
+                    end
+                end)
+                local quality_key = quality_name
+                if not available_items[stack.name].by_quality[quality_key] then
+                    available_items[stack.name].by_quality[quality_key] = {
+                        name = quality_name,
+                        level = quality_level,
+                        color = quality_color,
+                        count = 0
+                    }
+                end
+                available_items[stack.name].by_quality[quality_key].count = 
+                    available_items[stack.name].by_quality[quality_key].count + stack.count
+                available_items[stack.name].total =
+                    available_items[stack.name].total + stack.count
+
+                local found = false
+                for _, item in ipairs(match_list) do
+                    if item.name == stack.name then
+                        found = true
+                        break
+                    end
+                end
+                if not found then
+                    table.insert(match_list, {
+                        name = stack.name,
+                        display_name = stack.name
+                    })
+                end
+            end
+        end
+    end
+return match_list end
+    
+
+
 function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     if player.gui.screen["spidertron_extras_frame"] then
         player.gui.screen["spidertron_extras_frame"].destroy()
@@ -539,6 +615,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     }
     local ammo_list = {}
     local fuel_list = {}
+    local equipment_list = {}
     
     -- Scan platform inventory for available items
     local available_items = map_gui.scan_platform_inventory(vehicle_data)
@@ -637,7 +714,6 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             end
         end
     end
-    
     -- Check if the vehicle needs fuel (has a burner accepting chemical fuel)
     local needs_fuel = false
     if entity_prototype and entity_prototype.burner_prototype then
@@ -646,7 +722,6 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             needs_fuel = true
         end
     end
-    
     -- Scan for chemical fuel items if the vehicle needs fuel
     if needs_fuel then
         local hub = vehicle_data.hub
@@ -711,6 +786,28 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             end
         end
     end
+
+    --check if the vehichle prototype has an equipment grid
+    local has_equipment
+    if entity_prototype and entity_prototype.grid_prototype then
+        has_equipment = true
+        local grid_categories = entity_prototype.grid_prototype.equipment_categories
+        local compatible_equipment = {}
+        pcall(function() --not sure why we're pcalling functions but whatever
+            for name, equipment_prototype in pairs(prototypes.equipment) do
+                local equipment_categories = equipment_prototype.equipment_categories
+                if list_match_list(equipment_categories,grid_categories) then
+                    table.insert(compatible_equipment,equipment_prototype.take_result.name) --does falsely assume that the equipment is placed by the same item it makes when recivied. in exchange for (probably) being more performant
+                end
+            end
+        end)
+
+        local hub = vehicle_data.hub
+        if hub and hub.valid then
+            local hub_inventory = hub.get_inventory(defines.inventory.chest)
+            equipment_list = map_gui.list_compatible_items_in_inventory(hub_inventory,compatible_equipment,available_items)
+        end
+    end
     
     -- Check if any items are available across all sections
     local any_items_available = false
@@ -727,6 +824,12 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         end
     end
     for _, item in ipairs(fuel_list) do
+        if available_items[item.name] and available_items[item.name].total > 0 then
+            any_items_available = true
+            break
+        end
+    end
+    for _, item in ipairs(equipment_list) do
         if available_items[item.name] and available_items[item.name].total > 0 then
             any_items_available = true
             break
@@ -899,7 +1002,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
                     local stack_button = right_flow.add{
                         type = "sprite-button",
                         name = "stack_" .. item.name .. "_" .. quality_data.name,
-                        sprite = "fp_stack",
+                        sprite = "virtual-signal/signal-stack-size",--i couldnt tell you why but fp_stack broke, this works though.
                         tooltip = "Add 1 stack (" .. stack_size .. " items)",
                         tags = {
                             action = "add_stack",
@@ -1064,6 +1167,46 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             }.style.font_color = {r=0.5, g=0.5, b=0.5}
         end
         tabbed_pane.add_tab(fuel_tab, fuel_content)
+    end
+
+    -- Tab 4: Equipment (shown if vehichle has equipment)
+    if has_equipment then
+        local equipment_tab = tabbed_pane.add{
+            type = "tab",
+            name = "equipment_tab",
+            caption = "[img=item/roboport] Equipment", -- Rich text with item icon
+            tooltip = "Equipment"
+        }
+        local equipment_content = tabbed_pane.add{
+            type = "flow",
+            name = "equipment_content",
+            direction = "vertical"
+        }
+        local equipment_scroll_pane = equipment_content.add{
+            type = "scroll-pane",
+            name = "equipment_scroll_pane",
+            horizontal_scroll_policy = "never",
+            vertical_scroll_policy = "auto"
+        }
+        equipment_scroll_pane.style.maximal_height = 300
+        equipment_scroll_pane.style.minimal_width = 500
+        if #equipment_list > 0 then
+            local equipment_table = equipment_scroll_pane.add{
+                type = "table",
+                name = "equipment_table",
+                column_count = 2,
+                style = "table"
+            }
+            for _, item in ipairs(equipment_list) do
+                add_item_entry(equipment_table, item, available_items[item.name])
+            end
+        else
+            equipment_scroll_pane.add{
+                type = "label",
+                caption = "No equipment items available"
+            }.style.font_color = {r=0.5, g=0.5, b=0.5}
+        end
+        tabbed_pane.add_tab(equipment_tab, equipment_content)
     end
     
     -- Add spacer
@@ -1305,6 +1448,10 @@ function handle_extras_menu_clicks(event)
             for _, field in pairs(text_fields) do
                 local name = field.name
                 local _, _, item_name, quality = string.find(name, "text_(.+)_(.+)")
+                local in_grid = false
+                if prototypes.item[item_name].place_as_equipment_result then
+                    in_grid = prototypes.item[item_name].place_as_equipment_result
+                end
                 
                 if item_name and quality then
                     local count = tonumber(field.text) or 0
@@ -1312,7 +1459,8 @@ function handle_extras_menu_clicks(event)
                         table.insert(selected_extras, {
                             name = item_name,
                             count = count,
-                            quality = quality
+                            quality = quality,
+                            in_grid = in_grid,
                         })
                     end
                 end
