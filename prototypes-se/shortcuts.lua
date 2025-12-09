@@ -9,8 +9,7 @@ local orbital_spidertron_shortcut = {
     localised_name = {"", "Orbital Deployment"},
     icon = "__base__/graphics/icons/cargo-pod.png",  -- Main icon
     small_icon = "__base__/graphics/icons/cargo-pod.png",  -- Small icon (required)
-    -- SE-SPECIFIC: Use spidertron technology instead of space-platform
-    technology_to_unlock = "spidertron"
+    technology_to_unlock = "se-space-capsule-navigation"
 }
 
 data:extend({orbital_spidertron_shortcut})

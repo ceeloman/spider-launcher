@@ -21,10 +21,10 @@ end
 -- Initialize player shortcuts
 local function init_players()
     for _, player in pairs(game.players) do
-        -- SE-SPECIFIC: Enable the shortcut based on spidertron research
-        local spidertron_researched = player.force.technologies["spidertron"] and player.force.technologies["spidertron"].researched or false
+        -- SE-SPECIFIC: Enable the shortcut based on se-space-capsule-navigation research
+        local tech_researched = player.force.technologies["se-space-capsule-navigation"] and player.force.technologies["se-space-capsule-navigation"].researched or false
         
-        player.set_shortcut_available("orbital-spidertron-deploy", spidertron_researched)
+        player.set_shortcut_available("orbital-spidertron-deploy", tech_researched)
     end
 end
 
@@ -431,9 +431,9 @@ end)
 -- Update when relevant technologies are researched
 script.on_event(defines.events.on_research_finished, function(event)
     local tech_name = event.research.name
-    -- SE-SPECIFIC: Check if this is the spidertron technology
-    if tech_name == "spidertron" then
-        -- Update shortcuts for all players in this force
+    -- SE-SPECIFIC: Check if this is the se-space-capsule-navigation technology
+    if tech_name == "se-space-capsule-navigation" then
+        -- Update shortcuts for all players in this force on all surfaces
         for _, player in pairs(event.research.force.players) do
             map_gui.initialize_player_shortcuts(player)
             player.set_shortcut_available("orbital-spidertron-deploy", true)

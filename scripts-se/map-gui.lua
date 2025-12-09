@@ -1249,33 +1249,22 @@ function map_gui.on_player_changed_render_mode(event)
     local player = game.get_player(event.player_index)
     if not player then return end
 
-    -- Check both conditions
-    local spidertron_researched = player.force.technologies["spidertron"].researched
+    -- Check if the se-space-capsule-navigation technology is researched
+    local tech = player.force.technologies["se-space-capsule-navigation"]
+    local tech_researched = tech and tech.researched or false
     
-    -- SE-SPECIFIC: Check if player is on a space surface (orbit, asteroid-belt, asteroid-field)
-    local is_on_space = is_on_space_surface(player.surface)
-    
-    if spidertron_researched and not is_on_space then
-        player.set_shortcut_available("orbital-spidertron-deploy", true)
-    else
-        player.set_shortcut_available("orbital-spidertron-deploy", false)
-    end
+    -- Enable on all surfaces once unlocked
+    player.set_shortcut_available("orbital-spidertron-deploy", tech_researched)
 end
 
 -- Initialize player's shortcut buttons
 function map_gui.initialize_player_shortcuts(player)
-    -- First check if the technology is researched
-    local spidertron_researched = player.force.technologies["spidertron"].researched
+    -- Check if the se-space-capsule-navigation technology is researched
+    local tech = player.force.technologies["se-space-capsule-navigation"]
+    local tech_researched = tech and tech.researched or false
     
-    -- SE-SPECIFIC: Check if player is on a space surface (orbit, asteroid-belt, asteroid-field)
-    local is_on_space = is_on_space_surface(player.surface)
-    
-    -- Only enable if researched AND not on a space surface
-    if spidertron_researched and not is_on_space then
-        player.set_shortcut_available("orbital-spidertron-deploy", true)
-    else
-        player.set_shortcut_available("orbital-spidertron-deploy", false)
-    end
+    -- Enable on all surfaces once unlocked
+    player.set_shortcut_available("orbital-spidertron-deploy", tech_researched)
 end
 
 -- Initialize players
