@@ -1,4 +1,27 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.9.0
+Date: 2025-01-XX
+  Features:
+    - Same-surface deployment support
+      - Vehicles can now be deployed to the same surface they're launched from
+      - Uses surface-switching workaround to handle cargo pod limitations
+    - Full quality system support
+      - Vehicles, equipment, ammo, and all extras now preserve and display quality levels
+      - Quality overlays shown in GUI for vehicles and items
+      - Quality-aware item selection and deployment
+    - Space Exploration compatibility improvements (in preparation)
+      - Automatic planet association for SE surfaces (40 planets created for cargo pod support)
+      - Cargo bay registration and management system
+      - Zone-based deployment validation
+    - Mod compatibility
+      - TMFG
+  Technical Improvements:
+    - Cargo bay tracking system for better surface management
+    - Stale deployment cleanup system (prevents memory leaks)
+    - Render mode change handling for better GUI persistence
+    - Surface change event handling
+    - Cargo pod finished ascending event handler for same-surface deployments
+---------------------------------------------------------------------------------------------------
 Version: 2.8.0
 Date: 2025-06-24
   Bug fixes:
