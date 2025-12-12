@@ -5,7 +5,7 @@ local vehicles_list = require("scripts-sa.vehicles-list")
 
 -- Debug logging function
 local function debug_log(message)
-    log("[Orbital Spider Delivery SA] " .. message)
+    -- log("[Orbital Spider Delivery SA] " .. message)
 end
 
 -- Initialize storage
@@ -20,11 +20,7 @@ end
 -- Initialize player shortcuts
 local function init_players()
     for _, player in pairs(game.players) do
-        -- Enable the shortcut based on space-platform research
-        local space_platform_researched = player.force.technologies["space-platform"] and player.force.technologies["space-platform"].researched or false
-        local surface_name = player.surface.name
-                
-        player.set_shortcut_available("orbital-spidertron-deploy", space_platform_researched)
+        map_gui.initialize_player_shortcuts(player)
     end
 end
 
@@ -42,7 +38,6 @@ end)
 
 -- Register events on load
 script.on_load(function()
-    debug_log("Space Age module loaded")
 end)
 
 -- Register events on configuration changed
@@ -70,11 +65,11 @@ script.on_event(defines.events.on_gui_click, function(event)
         local stack_size = element.tags.stack_size or 50
         local max_value = element.tags.max_value or 50
         
-        -- Find the specific section table (utilities_table, ammo_table, or fuel_table)
+        -- Find the specific section table (utilities_table, ammo_table, fuel_table, or equipment_table)
         local section_table
         local current = element
         while current and current.valid do
-            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" then
+            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" then
                 section_table = current
                 break
             end
@@ -82,7 +77,7 @@ script.on_event(defines.events.on_gui_click, function(event)
         end
         
         if not section_table then
-            debug_log("Could not find section table (utilities_table, ammo_table, or fuel_table) for stack button")
+            debug_log("Could not find section table (utilities_table, ammo_table, fuel_table, or equipment_table) for stack button")
             return
         end
         
@@ -148,11 +143,11 @@ script.on_event(defines.events.on_gui_value_changed, function(event)
         -- Update the slider to ensure it shows integer values
         element.slider_value = value
         
-        -- Find the specific section table (utilities_table, ammo_table, or fuel_table)
+        -- Find the specific section table (utilities_table, ammo_table, fuel_table, or equipment_table)
         local section_table
         local current = element
         while current and current.valid do
-            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" then
+            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" then
                 section_table = current
                 break
             end
@@ -160,7 +155,7 @@ script.on_event(defines.events.on_gui_value_changed, function(event)
         end
         
         if not section_table then
-            debug_log("Could not find section table (utilities_table, ammo_table, or fuel_table) for slider")
+            debug_log("Could not find section table (utilities_table, ammo_table, fuel_table, or equipment_table) for slider")
             return
         end
         
@@ -205,14 +200,15 @@ script.on_event(defines.events.on_gui_text_changed, function(event)
         -- Parse the value
         local value = tonumber(element.text) or 0
         
-        -- Find the items_table by traversing up
+        -- Find the items_table by traversing up (check for any section table)
         local items_table
         local current = element
-        while current and current.valid and current.name ~= "extras_table" do
+        while current and current.valid do
+            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" or current.name == "extras_table" then
+                items_table = current
+                break
+            end
             current = current.parent
-        end
-        if current and current.name == "extras_table" then
-            items_table = current
         end
         
         if not items_table then
@@ -274,10 +270,16 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         local player = game.get_player(event.player_index)
         if not player then return end
         
+        -- Check if player is on a platform surface - can't deploy vehicles to platforms
+        if player.surface.platform then
+            player.print("Cannot deploy vehicles to a platform surface.")
+            return
+        end
+        
         -- Find orbital spider vehicles
         local vehicles = map_gui.find_orbital_vehicles(player.surface)
         if #vehicles == 0 then
-            --player.print("No vehicles are deployable to this surface.")
+            player.print("No vehicles are deployable to this surface.")
             return
         end
         
@@ -293,19 +295,13 @@ commands.add_command("test_deploy_message", "Test spider vehicle deployment mess
     
     --player.print("Spider vehicle deployment commencing for: Test Spider")
     
-    local success, err = pcall(function()
+    if player and player.valid and player.surface then
         local text = player.surface.create_entity({
             name = "flying-text",
             position = player.position,
             text = "Deploying Test Spider",
             color = {r=1, g=0, b=0}
         })
-    end)
-    
-    if not success then
-        --player.print("Error creating flying text: " .. tostring(err))
-    else
-        --player.print("Flying text created successfully")
     end
 end)
 
@@ -377,7 +373,7 @@ script.on_nth_tick(300, function()  -- Check every 5 seconds
         end
         
         if #stale_ids > 0 then
-            log("Cleaned up " .. #stale_ids .. " stale deployment records")
+            -- log("Cleaned up " .. #stale_ids .. " stale deployment records")
         end
     end
     
@@ -398,7 +394,7 @@ script.on_nth_tick(300, function()  -- Check every 5 seconds
         end
         
         if #stale_pod_ids > 0 then
-            log("Cleaned up " .. #stale_pod_ids .. " stale pod deployment records")
+            -- log("Cleaned up " .. #stale_pod_ids .. " stale pod deployment records")
         end
     end
 end)
@@ -439,16 +435,12 @@ commands.add_command("debug_hub_inventory", "Debug hub inventory items", functio
             local stack = inventory[i]
             if stack.valid_for_read then
                 local quality_str = "Normal"
-                pcall(function()
-                    if stack.quality then
-                        quality_str = stack.quality.name
-                    end
-                end)
+                if stack.quality then
+                    quality_str = stack.quality.name
+                end
                 
                 --player.print("Slot " .. i .. ": " .. stack.name .. " x" .. stack.count .. " (" .. quality_str .. ")")
             end
         end
     end
 end)
-
-debug_log("Space Age control script loaded")

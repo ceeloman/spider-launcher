@@ -15,7 +15,81 @@ local function init_storage()
     storage.pending_deployments = storage.pending_deployments or {}
     storage.pending_pod_deployments = storage.pending_pod_deployments or {}
     storage.temp_deployment_data = storage.temp_deployment_data or {}
+    storage.cargo_bays = storage.cargo_bays or {}
+    storage.cargo_bay_links = storage.cargo_bay_links or {}
     --debug_log("Space Exploration storage initialized")
+end
+
+-- Register a cargo bay in storage
+local function register_cargo_bay(entity)
+    if not entity or not entity.valid or entity.name ~= "ovd-deployment-container" then
+        return
+    end
+    
+    local unit_number = entity.unit_number
+    if not unit_number then
+        return
+    end
+    
+    -- Get zone information
+    local zone_name = nil
+    local zone_type = nil
+    local parent_zone_name = nil
+    
+    if remote.interfaces["space-exploration"] then
+        local zone = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = entity.surface.index})
+        if zone then
+            zone_name = zone.name
+            zone_type = zone.type
+            if zone.parent then
+                parent_zone_name = zone.parent.name
+            end
+        end
+    end
+    
+    -- Store cargo bay data
+    storage.cargo_bays[unit_number] = {
+        entity = entity,
+        surface_index = entity.surface.index,
+        surface_name = entity.surface.name,
+        zone_name = zone_name,
+        zone_type = zone_type,
+        parent_zone_name = parent_zone_name,
+        last_checked_tick = game.tick
+    }
+    
+    --debug_log("Registered cargo bay: unit_number=" .. unit_number .. ", surface=" .. entity.surface.name)
+end
+
+-- Unregister a cargo bay from storage
+local function unregister_cargo_bay(unit_number)
+    if storage.cargo_bays and storage.cargo_bays[unit_number] then
+        storage.cargo_bays[unit_number] = nil
+        --debug_log("Unregistered cargo bay: unit_number=" .. unit_number)
+    end
+end
+
+-- Register all existing cargo bays (for config changed or init)
+local function register_all_cargo_bays()
+    if not game then return end
+    
+    storage.cargo_bays = {}
+    local count = 0
+    
+    for _, surface in pairs(game.surfaces) do
+        local containers = surface.find_entities_filtered({
+            name = "ovd-deployment-container"
+        })
+        
+        for _, container in ipairs(containers) do
+            if container and container.valid then
+                register_cargo_bay(container)
+                count = count + 1
+            end
+        end
+    end
+    
+    --debug_log("Registered " .. count .. " existing cargo bays")
 end
 
 -- Initialize player shortcuts
@@ -32,6 +106,7 @@ end
 script.on_init(function()
     init_storage()
     init_players()
+    register_all_cargo_bays()  -- Register all existing cargo bays
     for _, player in pairs(game.players) do
         map_gui.initialize_player_shortcuts(player)
     end
@@ -49,6 +124,7 @@ end)
 script.on_configuration_changed(function(data)
     init_storage()
     init_players()
+    register_all_cargo_bays()  -- Re-register all cargo bays after config change
     vehicles_list.initialize()
     
     --debug_log("Configuration changed, storage reinitialized")
@@ -267,6 +343,31 @@ script.on_event(defines.events.on_built_entity, function(event)
         storage.cargo_bay_links = storage.cargo_bay_links or {}
         storage.cargo_bay_links[entity.unit_number] = cargo_bay
       end
+      
+      -- Register the cargo bay in storage
+      register_cargo_bay(entity)
+      
+      -- Link surface to planet at bay placement
+      local surface = entity.surface
+      
+      if surface and not surface.planet then
+        -- Find first available planet from the pool
+        local available_planet = nil
+        for i = 1, 40 do
+          local planet = game.planets["ovd-se-planet-" .. i]
+          if planet and not planet.surface then
+            available_planet = planet
+            break
+          end
+        end
+        
+        if available_planet then
+          available_planet.associate_surface(surface)
+        else
+          -- Log error to Factorio log
+          log("[OVD Bay Placement] ERROR: No available planets found! Surface " .. surface.name .. " (index: " .. surface.index .. ") is NOT linked to a planet. Deployment may fail!")
+        end
+      end
     end
 end)
 
@@ -283,6 +384,9 @@ script.on_event(defines.events.on_player_mined_entity, function(event)
         end
         storage.cargo_bay_links[entity.unit_number] = nil
       end
+      
+      -- Unregister the cargo bay from storage
+      unregister_cargo_bay(entity.unit_number)
     end
 end)
 
@@ -299,6 +403,9 @@ script.on_event(defines.events.on_entity_died, function(event)
         end
         storage.cargo_bay_links[entity.unit_number] = nil
       end
+      
+      -- Unregister the cargo bay from storage
+      unregister_cargo_bay(entity.unit_number)
     end
 end)
 
@@ -326,10 +433,11 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
             debug_log(surface_info)
             
             -- Try to get zone info for each surface
-            local success, zone = pcall(function()
-                return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
-            end)
-            if success and zone then
+            local zone = nil
+            if remote.interfaces["space-exploration"] then
+                zone = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
+            end
+            if zone then
                 local zone_info = "  -> Zone: " .. (zone.name or "unknown") .. " (type: " .. (zone.type or "unknown") .. ")"
                 --player.print(zone_info)
                 debug_log(zone_info)
@@ -359,7 +467,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         debug_log(found_info)
         
         if #vehicles == 0 then
-            --player.print("No vehicles are deployable to this surface.")
+            player.print("No vehicles are deployable to this surface.")
             debug_log("No vehicles found - deployment aborted")
             return
         end
@@ -409,14 +517,12 @@ script.on_event(defines.events.on_cargo_pod_finished_ascending, function(event)
             
             if matches and deployment_data.actual_surface and deployment_data.actual_position then
                 -- Fix the destination back to the actual surface
-                pcall(function()
-                    pod.cargo_pod_destination = {
-                        type = defines.cargo_destination.surface,
-                        surface = deployment_data.actual_surface,
-                        position = deployment_data.actual_position,
-                        land_at_exact_position = true
-                    }
-                end)
+                pod.cargo_pod_destination = {
+                    type = defines.cargo_destination.surface,
+                    surface = deployment_data.actual_surface,
+                    position = deployment_data.actual_position,
+                    land_at_exact_position = true
+                }
                 return
             end
         end
@@ -494,6 +600,24 @@ script.on_nth_tick(300, function()  -- Check every 5 seconds
             log("Cleaned up " .. #stale_pod_ids .. " stale pod deployment records")
         end
     end
+    
+    -- Clean up invalid cargo bays
+    if storage.cargo_bays then
+        local invalid_bays = {}
+        for unit_number, bay_data in pairs(storage.cargo_bays) do
+            if not bay_data.entity or not bay_data.entity.valid then
+                table.insert(invalid_bays, unit_number)
+            end
+        end
+        
+        for _, unit_number in ipairs(invalid_bays) do
+            storage.cargo_bays[unit_number] = nil
+        end
+        
+        if #invalid_bays > 0 then
+            --debug_log("Cleaned up " .. #invalid_bays .. " invalid cargo bay records")
+        end
+    end
 end)
 
 --debug_log("Space Exploration control script loaded")
@@ -512,16 +636,15 @@ script.on_init(function()
             --log("[OVD] Attempting to create planet from ovd-se-generic space-location")
             -- Planets are created automatically when a space location is discovered
             -- Try creating a dummy surface first, then we can associate SE surfaces later
-            local success, result = pcall(function()
-                local temp_surface = game.create_surface("ovd-temp-planet-surface", {})
-                local proto = prototypes.space_location["ovd-se-generic"]
-                if proto then
-                    -- This might create the planet
-                    return game.planets["ovd-se-generic"]
-                end
-            end)
+            local result = nil
+            local temp_surface = game.create_surface("ovd-temp-planet-surface", {})
+            local proto = prototypes.space_location["ovd-se-generic"]
+            if proto then
+                -- This might create the planet
+                result = game.planets["ovd-se-generic"]
+            end
             
-            if success and result then
+            if result then
                 --log("[OVD] Planet created successfully")
             else
                 log("[OVD] Could not create planet: " .. tostring(result))

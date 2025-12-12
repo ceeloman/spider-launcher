@@ -14,10 +14,12 @@ local function get_sprite_name(item_name)
 end
 
 local function sprite_exists(sprite_name)
-    local success = pcall(function()
-        game.is_valid_sprite_path(sprite_name)
-    end)
-    return success
+    if not sprite_name then return false end
+    if helpers and helpers.is_valid_sprite_path then
+        return helpers.is_valid_sprite_path(sprite_name)
+    end
+    -- If helpers is not available, assume sprite exists (Factorio will handle invalid sprites)
+    return true
 end
 
 -- Cache for the ammo category mapping
@@ -59,10 +61,11 @@ end
 
 -- Helper function to check if player is on a space surface (where deployment is not allowed)
 local function is_on_space_surface(surface)
-    local success, zone = pcall(function()
-        return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
-    end)
-    if success and zone then
+    if not surface or not remote.interfaces["space-exploration"] then
+        return false
+    end
+    local zone = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
+    if zone then
         return is_space_zone_type(zone.type)
     end
     return false
@@ -81,17 +84,18 @@ function map_gui.find_orbital_vehicles(player_surface, player)
     
     -- SE-SPECIFIC: Get the player's current zone
     local player_zone = nil
-    local success, result = pcall(function()
-        return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = player_surface.index})
-    end)
-    if success and result then
-        player_zone = result
-        local zone_info = "Player is on zone: " .. (player_zone.name or "unknown") .. " (type: " .. (player_zone.type or "unknown") .. ")"
-        --log("[SE] " .. zone_info)
-        --if player then player.print(zone_info) end
-    else
-        --log("[SE] Could not get player zone, remote call failed")
-        --if player then player.print("ERROR: Could not get player zone") end
+    if remote.interfaces["space-exploration"] then
+        local result = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = player_surface.index})
+        if result then
+            player_zone = result
+            local zone_info = "Player is on zone: " .. (player_zone.name or "unknown") .. " (type: " .. (player_zone.type or "unknown") .. ")"
+            --log("[SE] " .. zone_info)
+            --if player then player.print(zone_info) end
+        end
+    end
+    
+    -- If player_zone is nil, don't open the GUI
+    if not player_zone then
         return available_vehicles
     end
     
@@ -119,23 +123,32 @@ function map_gui.find_orbital_vehicles(player_surface, player)
         -- First try orbit (most common)
         for _, surface in pairs(game.surfaces) do
             --log("[SE] Checking surface: " .. surface.name)
-            local zone_success, zone_result = pcall(function()
-                return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
-            end)
+            local zone_result = nil
+            if remote.interfaces["space-exploration"] then
+                zone_result = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
+            end
             
-            if zone_success and zone_result and is_space_zone_type(zone_result.type) then
+            if zone_result and is_space_zone_type(zone_result.type) then
                 -- Check if this space zone's parent matches the player's zone
-                local parent_matches = true
+                local parent_matches = false
+                local name_matches = false
+                
                 if zone_result.parent then
                     parent_matches = (zone_result.parent.name == planet_name)
                     --log("[SE] Space zone parent: " .. (zone_result.parent.name or "unknown") .. ", Planet: " .. planet_name)
                 else
-                    --log("[SE] Space zone has no parent")
+                    --log("[SE] Space zone has no parent - using name-based matching")
+                    -- Fallback: If parent is nil, check if orbit name matches expected pattern
+                    if zone_result.type == "orbit" then
+                        local orbit_name = zone_result.name or surface.name
+                        local extracted_planet = orbit_name:gsub("%s+Orbit$", "")
+                        name_matches = (extracted_planet == planet_name)
+                    end
                 end
                 
-                -- Use the space surface if parent matches, or if it's an orbit with matching name
+                -- Use the space surface if parent matches, or if name matches (fallback for nil parent)
                 -- Note: asteroid-belt and asteroid-field zones are handled via parent matching (same as orbit when parent is set)
-                if parent_matches or (zone_result.type == "orbit" and surface.name == expected_orbit_name) then
+                if parent_matches or name_matches or (zone_result.type == "orbit" and surface.name == expected_orbit_name) then
                     target_orbit_surface = surface
                     --log("[SE] Found matching space surface: " .. surface.name .. " (type: " .. zone_result.type .. ")")
                     --if player then player.print("Found space surface: " .. surface.name .. " (type: " .. zone_result.type .. ")") end
@@ -160,12 +173,30 @@ function map_gui.find_orbital_vehicles(player_surface, player)
         --log("[SE] Searching space surface: " .. target_orbit_surface.name)
         --if player then player.print("Searching space surface: " .. target_orbit_surface.name) end
         
-        -- SE-SPECIFIC: Find deployment containers (ovd-deployment-container) on this space surface
-        -- In SE, the container IS the hub - no need to check for separate hubs
-        local containers = target_orbit_surface.find_entities_filtered({
-            name = "ovd-deployment-container"
-            -- No force filter - search all forces
-        })
+        -- Use registered cargo bays instead of entity search (much faster)
+        local containers = {}
+        if storage.cargo_bays then
+            for unit_number, bay_data in pairs(storage.cargo_bays) do
+                -- Check if cargo bay is on the target surface and still valid
+                if bay_data.entity and bay_data.entity.valid then
+                    if bay_data.surface_index == target_orbit_surface.index then
+                        table.insert(containers, bay_data.entity)
+                    end
+                end
+            end
+        end
+        
+        -- Fallback: If no registered cargo bays found, search entities (for compatibility)
+        if #containers == 0 then
+            local found_containers = target_orbit_surface.find_entities_filtered({
+                name = "ovd-deployment-container"
+            })
+            for _, container in ipairs(found_containers) do
+                if container and container.valid then
+                    table.insert(containers, container)
+                end
+            end
+        end
         
         --log("[SE] Found " .. #containers .. " deployment containers on space surface " .. target_orbit_surface.name)
         if player then 
@@ -219,30 +250,15 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                     --log("[SE]      -> ADDING TO VEHICLE LIST: " .. stack.name)
                                     --if player then player.print("      -> ADDING TO LIST: " .. stack.name) end
                                     
-                                    -- Try to get the vehicle's custom name if available
+                                    -- Get the vehicle's name - use entity_label if available, otherwise use formatted item name
                                     local name = stack.name:gsub("^%l", string.upper)
                                     
-                                    -- Try to get entity_label directly from stack
-                                    pcall(function()
-                                        if stack.entity_label and stack.entity_label ~= "" then
-                                            name = stack.entity_label
-                                            --log("[SE] Found entity_label directly: " .. name)
-                                        end
-                                    end)
-                                    
-                                    -- Fallbacks if direct entity_label didn't work
-                                    if name == stack.name:gsub("^%l", string.upper) then
-                                        pcall(function()
-                                            -- Try label from the stack
-                                            if stack.label and stack.label ~= "" then
-                                                name = stack.label
-                                                --log("[SE] Found label: " .. name)
-                                            -- Try to extract entity_label from item tags
-                                            elseif stack.tags and stack.tags.entity_label then
-                                                name = stack.tags.entity_label
-                                                --log("[SE] Found entity_label in tags: " .. name)
-                                            end
-                                        end)
+                                    -- Use entity_label directly (correct API method)
+                                    if stack.entity_label and stack.entity_label ~= "" then
+                                        name = stack.entity_label
+                                        --log("[SE] Found entity_label: " .. name .. " for item: " .. stack.name)
+                                    else
+                                        --log("[SE] No entity_label found for item: " .. stack.name .. ", using default name: " .. name)
                                     end
                                     
                                     -- Add debug log for final extracted name
@@ -250,20 +266,16 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                     
                                     -- Try to get color info safely
                                     local color = nil  -- Only set if vehicle has a color
-                                    pcall(function()
-                                        if stack.entity_color then
-                                            color = stack.entity_color
-                                        end
-                                    end)
+                                    if stack.entity_color then
+                                        color = stack.entity_color
+                                    end
                                     
                                     -- Try to get quality info safely
                                     local quality = nil
-                                    pcall(function()
-                                        if stack.quality then
-                                            quality = stack.quality
-                                            --log("[SE] Found vehicle with quality: " .. quality.name)
-                                        end
-                                    end)
+                                    if stack.quality then
+                                        quality = stack.quality
+                                        --log("[SE] Found vehicle with quality: " .. quality.name)
+                                    end
                                     
                                     -- Build tooltip with space surface details
                                     local tooltip = "Space Surface: " .. target_orbit_surface.name .. "\nSlot: " .. i
@@ -271,24 +283,135 @@ function map_gui.find_orbital_vehicles(player_surface, player)
                                     -- Get entity name for placing
                                     local entity_name = stack.name
                                     
-                                    -- Add the vehicle to the available vehicles list
-                                    -- In SE, container = hub
-                                    table.insert(available_vehicles, {
-                                        name = name,
-                                        tooltip = tooltip,
-                                        color = color,
-                                        index = i,
-                                        hub = container,  -- Container IS the hub in SE
-                                        inventory_slot = i,
-                                        inv_type = inv_type,
-                                        platform_name = target_orbit_surface.name,  -- Keep same field name for compatibility
-                                        quality = quality,
-                                        vehicle_name = stack.name,
-                                        entity_name = entity_name,
-                                        is_spider = is_spider_vehicle
-                                    })
+                                    -- Validate that this vehicle can be deployed to the player's surface
+                                    -- Get hub's zone and player's zone
+                                    local hub_zone = nil
+                                    local player_zone_valid = nil
                                     
-                                    --log("[SE] Added " .. name .. " to available vehicles list")
+                                    if remote.interfaces["space-exploration"] then
+                                        hub_zone = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = container.surface.index})
+                                        player_zone_valid = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = player_surface.index})
+                                    end
+                                    
+                                    -- Debug logging for map-gui
+                                    if player then
+                                        -- player.print("[OVD Map-GUI] Checking vehicle: " .. name)
+                                        -- player.print("[OVD Map-GUI] Hub surface: " .. container.surface.name .. " (index: " .. container.surface.index .. ")")
+                                        -- player.print("[OVD Map-GUI] Player surface: " .. player_surface.name .. " (index: " .. player_surface.index .. ")")
+                                        
+                                        if hub_zone then
+                                            -- player.print("[OVD Map-GUI] Hub zone: " .. (hub_zone.name or "nil") .. " (type: " .. (hub_zone.type or "nil") .. ")")
+                                            if hub_zone.parent then
+                                                -- player.print("[OVD Map-GUI] Hub zone parent: " .. (hub_zone.parent.name or "nil"))
+                                            else
+                                                -- player.print("[OVD Map-GUI] Hub zone parent: nil")
+                                            end
+                                        else
+                                            -- player.print("[OVD Map-GUI] Hub zone: nil")
+                                        end
+                                        
+                                        if player_zone_valid then
+                                            -- player.print("[OVD Map-GUI] Player zone: " .. (player_zone_valid.name or "nil") .. " (type: " .. (player_zone_valid.type or "nil") .. ")")
+                                        else
+                                            -- player.print("[OVD Map-GUI] Player zone: nil")
+                                        end
+                                    end
+                                    
+                                    -- If hub is on a space zone, validate deployment target
+                                    local can_deploy = true
+                                    if hub_zone and is_space_zone_type(hub_zone.type) then
+                                        can_deploy = false
+                                        
+                                        -- Allow if deploying to the same surface
+                                        if player_surface == container.surface then
+                                            can_deploy = true
+                                            if player then
+                                                -- player.print("[OVD Map-GUI] Allowed: Same surface deployment")
+                                            end
+                                        -- Allow if deploying to the parent planet/moon
+                                        elseif hub_zone.parent and player_zone_valid then
+                                            if player then
+                                                -- player.print("[OVD Map-GUI] Checking parent match: hub parent = " .. (hub_zone.parent.name or "nil") .. ", player zone = " .. (player_zone_valid.name or "nil"))
+                                            end
+                                            if player_zone_valid.name == hub_zone.parent.name then
+                                                can_deploy = true
+                                                if player then
+                                                    -- player.print("[OVD Map-GUI] Allowed: Player is on parent planet/moon")
+                                                end
+                                            else
+                                                if player then
+                                                    -- player.print("[OVD Map-GUI] Blocked: Player zone name doesn't match hub parent")
+                                                end
+                                            end
+                                        -- Fallback: If parent is nil, try name-based matching (e.g., "Nauvis Orbit" -> "Nauvis")
+                                        elseif not hub_zone.parent and player_zone_valid and (player_zone_valid.type == "planet" or player_zone_valid.type == "moon") then
+                                            -- Extract planet name from orbit name (e.g., "Nauvis Orbit" -> "Nauvis")
+                                            local orbit_name = hub_zone.name or container.surface.name
+                                            local expected_planet_name = orbit_name:gsub("%s+Orbit$", ""):gsub("%s+Asteroid%-Belt$", ""):gsub("%s+Asteroid%-Field$", "")
+                                            
+                                            if player then
+                                                -- player.print("[OVD Map-GUI] Fallback: Checking name match - orbit: " .. orbit_name .. ", expected planet: " .. expected_planet_name .. ", player zone: " .. (player_zone_valid.name or "nil"))
+                                            end
+                                            
+                                            if player_zone_valid.name == expected_planet_name then
+                                                can_deploy = true
+                                                if player then
+                                                    -- player.print("[OVD Map-GUI] Allowed: Name-based match (fallback)")
+                                                end
+                                            else
+                                                if player then
+                                                    -- player.print("[OVD Map-GUI] Blocked: Name-based match failed")
+                                                end
+                                            end
+                                        else
+                                            if player then
+                                                if not hub_zone.parent then
+                                                    -- player.print("[OVD Map-GUI] Blocked: Hub zone has no parent and name fallback failed")
+                                                end
+                                                if not player_zone_valid then
+                                                    -- player.print("[OVD Map-GUI] Blocked: Player zone is nil")
+                                                end
+                                            end
+                                        end
+                                    else
+                                        if player then
+                                            if not hub_zone then
+                                                -- player.print("[OVD Map-GUI] Hub not on space zone - allowing")
+                                            elseif not is_space_zone_type(hub_zone.type) then
+                                                -- player.print("[OVD Map-GUI] Hub zone type is not space type - allowing")
+                                            end
+                                        end
+                                    end
+                                    
+                                    -- Only add vehicle if deployment is allowed
+                                    if can_deploy then
+                                        if player then
+                                            -- player.print("[OVD Map-GUI] Vehicle added to list")
+                                        end
+                                        -- Add the vehicle to the available vehicles list
+                                        -- In SE, container = hub
+                                        table.insert(available_vehicles, {
+                                            name = name,
+                                            tooltip = tooltip,
+                                            color = color,
+                                            index = i,
+                                            hub = container,  -- Container IS the hub in SE
+                                            inventory_slot = i,
+                                            inv_type = inv_type,
+                                            platform_name = target_orbit_surface.name,  -- Keep same field name for compatibility
+                                            quality = quality,
+                                            vehicle_name = stack.name,
+                                            entity_name = entity_name,
+                                            is_spider = is_spider_vehicle
+                                        })
+                                        
+                                        --log("[SE] Added " .. name .. " to available vehicles list")
+                                    else
+                                        if player then
+                                            -- player.print("[OVD Map-GUI] Vehicle SKIPPED - cannot deploy from " .. container.surface.name .. " to " .. player_surface.name)
+                                        end
+                                        --log("[SE] Skipping vehicle - cannot deploy from " .. container.surface.name .. " to " .. player_surface.name)
+                                    end
                                 end
                             end
                         end
@@ -590,31 +713,27 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     local compatible_ammo_categories = {}
     if entity_prototype and entity_prototype.guns then
         has_guns = true
-        pcall(function()
-            for gun_name, gun_data in pairs(entity_prototype.guns) do
-                pcall(function()
-                    if gun_data.attack_parameters then
-                        if gun_data.attack_parameters.ammo_category then
-                            compatible_ammo_categories[gun_data.attack_parameters.ammo_category] = true
+        for gun_name, gun_data in pairs(entity_prototype.guns) do
+            if gun_data and gun_data.attack_parameters then
+                if gun_data.attack_parameters.ammo_category then
+                    compatible_ammo_categories[gun_data.attack_parameters.ammo_category] = true
+                end
+                if gun_data.attack_parameters.ammo_categories then
+                    if type(gun_data.attack_parameters.ammo_categories) == "string" then
+                        compatible_ammo_categories[gun_data.attack_parameters.ammo_categories] = true
+                    elseif type(gun_data.attack_parameters.ammo_categories) == "table" then
+                        if gun_data.attack_parameters.ammo_categories[1] then
+                            compatible_ammo_categories[gun_data.attack_parameters.ammo_categories[1]] = true
                         end
-                        if gun_data.attack_parameters.ammo_categories then
-                            if type(gun_data.attack_parameters.ammo_categories) == "string" then
-                                compatible_ammo_categories[gun_data.attack_parameters.ammo_categories] = true
-                            elseif type(gun_data.attack_parameters.ammo_categories) == "table" then
-                                if gun_data.attack_parameters.ammo_categories[1] then
-                                    compatible_ammo_categories[gun_data.attack_parameters.ammo_categories[1]] = true
-                                end
-                                for k, v in pairs(gun_data.attack_parameters.ammo_categories) do
-                                    if type(k) == "string" and k ~= "toString" then
-                                        compatible_ammo_categories[k] = true
-                                    end
-                                end
+                        for k, v in pairs(gun_data.attack_parameters.ammo_categories) do
+                            if type(k) == "string" and k ~= "toString" then
+                                compatible_ammo_categories[k] = true
                             end
                         end
                     end
-                end)
+                end
             end
-        end)
+        end
         
         -- Scan inventory for compatible ammo
         local hub = vehicle_data.hub
@@ -637,13 +756,11 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
                                 local quality_name = "Normal"
                                 local quality_level = 1
                                 local quality_color = {r=1, g=1, b=1}
-                                pcall(function()
-                                    if stack.quality then
-                                        quality_name = stack.quality.name
-                                        quality_level = stack.quality.level
-                                        quality_color = stack.quality.color
-                                    end
-                                end)
+                                if stack.quality then
+                                    quality_name = stack.quality.name
+                                    quality_level = stack.quality.level
+                                    quality_color = stack.quality.color
+                                end
                                 local quality_key = quality_name
                                 if not available_items[stack.name].by_quality[quality_key] then
                                     available_items[stack.name].by_quality[quality_key] = {
@@ -712,13 +829,11 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
                             local quality_name = "Normal"
                             local quality_level = 1
                             local quality_color = {r=1, g=1, b=1}
-                            pcall(function()
-                                if stack.quality then
-                                    quality_name = stack.quality.name
-                                    quality_level = stack.quality.level
-                                    quality_color = stack.quality.color
-                                end
-                            end)
+                            if stack.quality then
+                                quality_name = stack.quality.name
+                                quality_level = stack.quality.level
+                                quality_color = stack.quality.color
+                            end
                             local quality_key = quality_name
                             if not available_items[stack.name].by_quality[quality_key] then
                                 available_items[stack.name].by_quality[quality_key] = {
@@ -1186,14 +1301,12 @@ function map_gui.scan_platform_inventory(vehicle_data)
                     local quality_color = {r=1, g=1, b=1}
                     
                     -- Try to get quality
-                    pcall(function()
-                        if stack.quality then
-                            quality_name = stack.quality.name
-                            quality_level = stack.quality.level
-                            quality_color = stack.quality.color
-                            --log("[SE] Item has quality: " .. quality_name .. " (level " .. quality_level .. ")")
-                        end
-                    end)
+                    if stack.quality then
+                        quality_name = stack.quality.name
+                        quality_level = stack.quality.level
+                        quality_color = stack.quality.color
+                        --log("[SE] Item has quality: " .. quality_name .. " (level " .. quality_level .. ")")
+                    end
                     
                     -- Create a quality key for grouping
                     local quality_key = quality_name

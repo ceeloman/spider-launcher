@@ -48,34 +48,16 @@ end
 
 local function create_filtered_fuel_sprites()
     for name, item in pairs(data.raw["item"]) do
-        -- Log every item being evaluated
-        log("Evaluating item: " .. name)
-        
         if item.fuel_value then
-            log("Item " .. name .. " has fuel_value: " .. tostring(item.fuel_value))
-            
             if item.fuel_category == "chemical" then
-                log("Item " .. name .. " is in chemical category")
-                
                 if not string.find(name:lower(), "seed") and
                    not string.find(name:lower(), "egg") and
                    not string.find(name:lower(), "spoil") then
-                    log("Item " .. name .. " passes name filters (no seed/egg/spoil)")
-                    
                     if item.spoil_result == nil then
-                        log("Item " .. name .. " has no spoil_result, creating sprite")
                         create_entity_sprite_from_item(item, name, "sl-")
-                    else
-                        log("Item " .. name .. " has spoil_result, skipping")
                     end
-                else
-                    log("Item " .. name .. " contains seed/egg/spoil, skipping")
                 end
-            else
-                log("Item " .. name .. " is not in chemical category, skipping")
             end
-        else
-            log("Item " .. name .. " has no fuel_value, skipping")
         end
     end
 end
@@ -111,7 +93,6 @@ end
 local function create_quality_overlay_sprites()
     -- Check if quality system exists (Space Age feature)
     if not data.raw.quality then
-        log("Quality system not available, skipping quality overlay sprites")
         return
     end
     
@@ -166,8 +147,6 @@ local function create_quality_overlay_sprites()
         end
         
         data:extend({ sprite })
-        
-        log("Created quality overlay sprite " .. sprite_name .. " with icon_size=" .. icon_size .. ", scale=" .. (14 / icon_size) .. ", tint=" .. (tint and string.format("{%g,%g,%g}", tint[1] or tint.r, tint[2] or tint.g, tint[3] or tint.b) or "none"))
         
         ::continue::
     end

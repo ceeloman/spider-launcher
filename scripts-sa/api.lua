@@ -118,21 +118,15 @@ function api.deploy_from_hub(params)
     
     -- Try to get data from entity item first, then pod item
     local source_stack = entity_data_stack or vehicle_stack.stack
-    pcall(function()
-        if source_stack.entity_label and source_stack.entity_label ~= "" then
-            vehicle_name = source_stack.entity_label
-        end
-    end)
-    pcall(function()
-        if source_stack.entity_color then
-            vehicle_color = source_stack.entity_color
-        end
-    end)
-    pcall(function()
-        if source_stack.quality then
-            vehicle_quality = source_stack.quality
-        end
-    end)
+    if source_stack.entity_label and source_stack.entity_label ~= "" then
+        vehicle_name = source_stack.entity_label
+    end
+    if source_stack.entity_color then
+        vehicle_color = source_stack.entity_color
+    end
+    if source_stack.quality then
+        vehicle_quality = source_stack.quality
+    end
     
     -- Get grid data from the vehicle stack if it has equipment
     local grid_data = {}
@@ -208,13 +202,7 @@ function api.deploy_from_hub(params)
     
     -- Call the deployment function (it will handle the pod creation, item removal, and animation)
     -- Don't teleport player - deployment will use api_target_surface if available
-    local deploy_success, deploy_error = pcall(function()
-        deployment.deploy_spider_vehicle(player, vehicle_data, "target", trunk_items)
-    end)
-    
-    if not deploy_success then
-        return false, "Deployment function error: " .. tostring(deploy_error)
-    end
+    deployment.deploy_spider_vehicle(player, vehicle_data, "target", trunk_items)
     
     -- Remove all required items from inventory (both scout-o-tron and pod)
     -- Do this AFTER deployment since deployment may have already removed some items
@@ -312,6 +300,11 @@ end
 -- Get default equipment and trunk items for a vehicle
 function api.get_vehicle_defaults(vehicle_item)
     return api.vehicle_defaults[vehicle_item] or {equipment_grid = {}, trunk_items = {}}
+end
+
+-- Check if TFMG mod is active
+function api.is_tfmg_active()
+    return script.active_mods["TFMG"] ~= nil or script.active_mods["tfmg"] ~= nil
 end
 
 -- Register the remote interface

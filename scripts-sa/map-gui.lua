@@ -1,22 +1,28 @@
 -- scripts-sa/map-gui.lua
 local vehicles_list = require("scripts-sa.vehicles-list")
 local deployment = require("scripts-sa.deployment")
+local api = require("scripts-sa.api")
 
 local map_gui = {}
 
 -- Helper functions
 
+local function sprite_exists(sprite_name)
+    if not sprite_name then return false end
+    if helpers and helpers.is_valid_sprite_path then
+        return helpers.is_valid_sprite_path(sprite_name)
+    end
+    -- If helpers is not available, assume sprite exists (Factorio will handle invalid sprites)
+    return true
+end
+
 local function get_sprite_name(item_name)
     -- Check if we have a custom sprite for this item
     local custom_sprite = "sl-" .. item_name
+    if not sprite_exists(custom_sprite) then
+        custom_sprite = "item/" .. item_name
+    end
     return custom_sprite
-end
-
-local function sprite_exists(sprite_name)
-    local success = pcall(function()
-        game.is_valid_sprite_path(sprite_name)
-    end)
-    return success
 end
 
 -- Cache for the ammo category mapping
@@ -147,51 +153,29 @@ function map_gui.find_orbital_vehicles(player_surface)
                                         processed_slots[i] = true
                                         -- log("ADDING VEHICLE: " .. stack.name .. " to available vehicles list")
                                         
-                                        -- Try to get the vehicle's custom name if available
+                                        -- Get the vehicle's name - use entity_label if available, otherwise use formatted item name
                                         local name = stack.name:gsub("^%l", string.upper)
                                         
-                                        -- Try to get entity_label directly from stack
-                                        pcall(function()
-                                            if stack.entity_label and stack.entity_label ~= "" then
-                                                name = stack.entity_label
-                                                -- log("Found entity_label directly: " .. name)
-                                            end
-                                        end)
-                                        
-                                        -- Fallbacks if direct entity_label didn't work
-                                        if name == stack.name:gsub("^%l", string.upper) then
-                                            pcall(function()
-                                                -- Try label from the stack
-                                                if stack.label and stack.label ~= "" then
-                                                    name = stack.label
-                                                    -- log("Found label: " .. name)
-                                                -- Try to extract entity_label from item tags
-                                                elseif stack.tags and stack.tags.entity_label then
-                                                    name = stack.tags.entity_label
-                                                    -- log("Found entity_label in tags: " .. name)
-                                                end
-                                            end)
+                                        -- Use entity_label directly (correct API method)
+                                        if stack.entity_label and stack.entity_label ~= "" then
+                                            name = stack.entity_label
+                                            --game.print("Found entity_label: " .. name .. " for item: " .. stack.name)
+                                        else
+                                            --game.print("No entity_label found for item: " .. stack.name .. ", using default name: " .. name)
                                         end
                                         
-                                        -- Add debug log for final extracted name
-                                        -- log("Final extracted vehicle name: " .. name)
-                                        
                                         -- Try to get color info safely
-                                        local color = {r=1, g=0.5, b=0.0}  -- Default color
-                                        pcall(function()
-                                            if stack.entity_color then
-                                                color = stack.entity_color
-                                            end
-                                        end)
+                                        local color = nil  -- Will use default in deployment if nil
+                                        if stack.entity_color then
+                                            color = stack.entity_color
+                                        end
                                         
                                         -- Try to get quality info safely
                                         local quality = nil
-                                        pcall(function()
-                                            if stack.quality then
-                                                quality = stack.quality
-                                                -- log("Found vehicle with quality: " .. quality.name)
-                                            end
-                                        end)
+                                        if stack.quality then
+                                            quality = stack.quality
+                                            -- log("Found vehicle with quality: " .. quality.name)
+                                        end
                                         
                                         -- Build tooltip with platform details
                                         local tooltip = "Platform: " .. surface.name .. "\nSlot: " .. i
@@ -456,7 +440,82 @@ function map_gui.show_deployment_menu(player, vehicles)
     storage.spidertrons = vehicles  -- Keeping the same storage variable name for compatibility
 end
 
+-- Helper functions for equipment matching
+local function match_in_list(list, string) --finds if theres a matching string in list, returns true if so
+    for _, name in pairs(list) do
+        if name == string then return true end
+    end
+    return false
+end
+
+local function list_match_list(list, list_2) --this checks if theres any match between two lists
+    for _, string in pairs(list_2) do
+        if match_in_list(list, string) then return true end
+    end
+    return false
+end
+
+function map_gui.list_compatible_items_in_inventory(inventory, compatible_items_list, available_items)
+    if not inventory then 
+        game.print("inventory was nil")
+        return {}
+    end
+    local match_list = {}
+
+    for i = 1, #inventory do
+        local stack = inventory[i]
+        if stack and stack.valid_for_read then
+            if match_in_list(compatible_items_list, stack.name) then
+                if not available_items[stack.name] then
+                    available_items[stack.name] = {
+                        total = 0,
+                        by_quality = {}
+                    }
+                end
+                local quality_name = "Normal"
+                local quality_level = 1
+                local quality_color = {r=1, g=1, b=1}
+                if stack.quality then
+                    quality_name = stack.quality.name
+                    quality_level = stack.quality.level
+                    quality_color = stack.quality.color
+                end
+                local quality_key = quality_name
+                if not available_items[stack.name].by_quality[quality_key] then
+                    available_items[stack.name].by_quality[quality_key] = {
+                        name = quality_name,
+                        level = quality_level,
+                        color = quality_color,
+                        count = 0
+                    }
+                end
+                available_items[stack.name].by_quality[quality_key].count = 
+                    available_items[stack.name].by_quality[quality_key].count + stack.count
+                available_items[stack.name].total =
+                    available_items[stack.name].total + stack.count
+
+                local found = false
+                for _, item in ipairs(match_list) do
+                    if item.name == stack.name then
+                        found = true
+                        break
+                    end
+                end
+                if not found then
+                    table.insert(match_list, {
+                        name = stack.name,
+                        display_name = stack.name
+                    })
+                end
+            end
+        end
+    end
+    return match_list
+end
+
 function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
+    -- game.print("[DEBUG] show_extras_menu called for vehicle: " .. tostring(vehicle_data.name) .. ", deploy_target: " .. tostring(deploy_target))
+    
     if player.gui.screen["spidertron_extras_frame"] then
         player.gui.screen["spidertron_extras_frame"].destroy()
     end
@@ -468,9 +527,14 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     }
     local ammo_list = {}
     local fuel_list = {}
+    local equipment_list = {}
     
     -- Scan platform inventory for available items
+    -- game.print("[DEBUG] Scanning platform inventory...")
     local available_items = map_gui.scan_platform_inventory(vehicle_data)
+    local item_count = 0
+    for _ in pairs(available_items) do item_count = item_count + 1 end
+    -- game.print("[DEBUG] Available items scan complete. Found " .. tostring(item_count) .. " item types")
     
     -- Check if the vehicle can use ammo
     local entity_prototype = prototypes.entity[vehicle_data.entity_name]
@@ -478,31 +542,27 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     local compatible_ammo_categories = {}
     if entity_prototype and entity_prototype.guns then
         has_guns = true
-        pcall(function()
-            for gun_name, gun_data in pairs(entity_prototype.guns) do
-                pcall(function()
-                    if gun_data.attack_parameters then
-                        if gun_data.attack_parameters.ammo_category then
-                            compatible_ammo_categories[gun_data.attack_parameters.ammo_category] = true
+        for gun_name, gun_data in pairs(entity_prototype.guns) do
+            if gun_data and gun_data.attack_parameters then
+                if gun_data.attack_parameters.ammo_category then
+                    compatible_ammo_categories[gun_data.attack_parameters.ammo_category] = true
+                end
+                if gun_data.attack_parameters.ammo_categories then
+                    if type(gun_data.attack_parameters.ammo_categories) == "string" then
+                        compatible_ammo_categories[gun_data.attack_parameters.ammo_categories] = true
+                    elseif type(gun_data.attack_parameters.ammo_categories) == "table" then
+                        if gun_data.attack_parameters.ammo_categories[1] then
+                            compatible_ammo_categories[gun_data.attack_parameters.ammo_categories[1]] = true
                         end
-                        if gun_data.attack_parameters.ammo_categories then
-                            if type(gun_data.attack_parameters.ammo_categories) == "string" then
-                                compatible_ammo_categories[gun_data.attack_parameters.ammo_categories] = true
-                            elseif type(gun_data.attack_parameters.ammo_categories) == "table" then
-                                if gun_data.attack_parameters.ammo_categories[1] then
-                                    compatible_ammo_categories[gun_data.attack_parameters.ammo_categories[1]] = true
-                                end
-                                for k, v in pairs(gun_data.attack_parameters.ammo_categories) do
-                                    if type(k) == "string" and k ~= "toString" then
-                                        compatible_ammo_categories[k] = true
-                                    end
-                                end
+                        for k, v in pairs(gun_data.attack_parameters.ammo_categories) do
+                            if type(k) == "string" and k ~= "toString" then
+                                compatible_ammo_categories[k] = true
                             end
                         end
                     end
-                end)
+                end
             end
-        end)
+        end
         
         -- Scan inventory for compatible ammo
         local hub = vehicle_data.hub
@@ -525,13 +585,11 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
                                 local quality_name = "Normal"
                                 local quality_level = 1
                                 local quality_color = {r=1, g=1, b=1}
-                                pcall(function()
-                                    if stack.quality then
-                                        quality_name = stack.quality.name
-                                        quality_level = stack.quality.level
-                                        quality_color = stack.quality.color
-                                    end
-                                end)
+                                if stack.quality then
+                                    quality_name = stack.quality.name
+                                    quality_level = stack.quality.level
+                                    quality_color = stack.quality.color
+                                end
                                 local quality_key = quality_name
                                 if not available_items[stack.name].by_quality[quality_key] then
                                     available_items[stack.name].by_quality[quality_key] = {
@@ -600,13 +658,11 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
                             local quality_name = "Normal"
                             local quality_level = 1
                             local quality_color = {r=1, g=1, b=1}
-                            pcall(function()
-                                if stack.quality then
-                                    quality_name = stack.quality.name
-                                    quality_level = stack.quality.level
-                                    quality_color = stack.quality.color
-                                end
-                            end)
+                            if stack.quality then
+                                quality_name = stack.quality.name
+                                quality_level = stack.quality.level
+                                quality_color = stack.quality.color
+                            end
                             local quality_key = quality_name
                             if not available_items[stack.name].by_quality[quality_key] then
                                 available_items[stack.name].by_quality[quality_key] = {
@@ -640,43 +696,107 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             end
         end
     end
+
+    -- Check if the vehicle has an equipment grid
+    local has_equipment = false
+    if entity_prototype and entity_prototype.grid_prototype then
+        has_equipment = true
+        -- game.print("[DEBUG] Vehicle has equipment grid, scanning for compatible equipment...")
+        local grid_categories = entity_prototype.grid_prototype.equipment_categories
+        local compatible_equipment = {}
+        if prototypes.equipment then
+            for name, equipment_prototype in pairs(prototypes.equipment) do
+                if equipment_prototype and equipment_prototype.equipment_categories then
+                    local equipment_categories = equipment_prototype.equipment_categories
+                    if list_match_list(equipment_categories, grid_categories) then
+                        if equipment_prototype.take_result and equipment_prototype.take_result.name then
+                            table.insert(compatible_equipment, equipment_prototype.take_result.name)
+                        end
+                    end
+                end
+            end
+        end
+
+        local hub = vehicle_data.hub
+        if hub and hub.valid then
+            local hub_inventory = hub.get_inventory(defines.inventory.chest)
+            if hub_inventory then
+                equipment_list = map_gui.list_compatible_items_in_inventory(hub_inventory, compatible_equipment, available_items)
+                -- game.print("[DEBUG] Found " .. tostring(#equipment_list) .. " compatible equipment types")
+            end
+        end
+    else
+        -- game.print("[DEBUG] Vehicle does not have an equipment grid")
+    end
     
     -- Check if any items are available across all sections
+    -- game.print("[DEBUG] Checking item availability...")
+    -- game.print("[DEBUG] Utilities list size: " .. tostring(#utilities_list))
+    -- game.print("[DEBUG] Ammo list size: " .. tostring(#ammo_list))
+    -- game.print("[DEBUG] Fuel list size: " .. tostring(#fuel_list))
+    -- game.print("[DEBUG] Equipment list size: " .. tostring(#equipment_list))
+    
     local any_items_available = false
     for _, item in ipairs(utilities_list) do
-        if available_items[item.name] and available_items[item.name].total > 0 then
+        local item_data = available_items[item.name]
+        local count = item_data and item_data.total or 0
+        -- game.print("[DEBUG] Utility " .. item.name .. ": " .. tostring(count) .. " available")
+        if count > 0 then
             any_items_available = true
             break
         end
     end
     for _, item in ipairs(ammo_list) do
-        if available_items[item.name] and available_items[item.name].total > 0 then
+        local item_data = available_items[item.name]
+        local count = item_data and item_data.total or 0
+        -- game.print("[DEBUG] Ammo " .. item.name .. ": " .. tostring(count) .. " available")
+        if count > 0 then
             any_items_available = true
             break
         end
     end
     for _, item in ipairs(fuel_list) do
-        if available_items[item.name] and available_items[item.name].total > 0 then
+        local item_data = available_items[item.name]
+        local count = item_data and item_data.total or 0
+        -- game.print("[DEBUG] Fuel " .. item.name .. ": " .. tostring(count) .. " available")
+        if count > 0 then
+            any_items_available = true
+            break
+        end
+    end
+    for _, item in ipairs(equipment_list) do
+        local item_data = available_items[item.name]
+        local count = item_data and item_data.total or 0
+        -- game.print("[DEBUG] Equipment " .. item.name .. ": " .. tostring(count) .. " available")
+        if count > 0 then
             any_items_available = true
             break
         end
     end
     
+    -- game.print("[DEBUG] any_items_available = " .. tostring(any_items_available))
+    
     if not any_items_available then
+        -- game.print("[DEBUG] No items available - deploying immediately without extras menu")
         if player.gui.screen["spidertron_deployment_frame"] then
             player.gui.screen["spidertron_deployment_frame"].destroy()
         end
+        -- game.print("[DEBUG] Calling deployment.deploy_spider_vehicle directly")
         deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target)
         return
     end
     
+    -- game.print("[DEBUG] Items available - showing extras menu")
+    
     -- Create the extras menu frame
+    -- game.print("[DEBUG] Creating extras menu frame...")
     local frame = player.gui.screen.add{
         type = "frame",
         name = "spidertron_extras_frame",
         direction = "vertical"
     }
     player.opened = frame
+    -- game.print("[DEBUG] Extras menu frame created and opened")
     frame.auto_center = false
     local resolution = player.display_resolution
     frame.location = {x = resolution.width / 2 - 250, y = resolution.height / 2 - 200}
@@ -988,6 +1108,46 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         end
         tabbed_pane.add_tab(fuel_tab, fuel_content)
     end
+
+    -- Tab 4: Equipment (shown only if vehicle has equipment grid AND TFMG is installed)
+    if has_equipment and api.is_tfmg_active() then
+        local equipment_tab = tabbed_pane.add{
+            type = "tab",
+            name = "equipment_tab",
+            caption = "[img=item/roboport] Equipment", -- Rich text with item icon
+            tooltip = "Equipment"
+        }
+        local equipment_content = tabbed_pane.add{
+            type = "flow",
+            name = "equipment_content",
+            direction = "vertical"
+        }
+        local equipment_scroll_pane = equipment_content.add{
+            type = "scroll-pane",
+            name = "equipment_scroll_pane",
+            horizontal_scroll_policy = "never",
+            vertical_scroll_policy = "auto"
+        }
+        equipment_scroll_pane.style.maximal_height = 300
+        equipment_scroll_pane.style.minimal_width = 500
+        if #equipment_list > 0 then
+            local equipment_table = equipment_scroll_pane.add{
+                type = "table",
+                name = "equipment_table",
+                column_count = 2,
+                style = "table"
+            }
+            for _, item in ipairs(equipment_list) do
+                add_item_entry(equipment_table, item, available_items[item.name])
+            end
+        else
+            equipment_scroll_pane.add{
+                type = "label",
+                caption = "No equipment items available"
+            }.style.font_color = {r=0.5, g=0.5, b=0.5}
+        end
+        tabbed_pane.add_tab(equipment_tab, equipment_content)
+    end
     
     -- Add spacer
     local vert_spacer = frame.add{
@@ -1044,10 +1204,10 @@ function map_gui.on_player_changed_render_mode(event)
     local player = game.get_player(event.player_index)
     if not player then return end
 
-    -- Check both conditions
-    local spidertron_researched = player.force.technologies["spidertron"].researched
+    -- Check if space-platform technology is researched
+    local space_platform_researched = player.force.technologies["space-platform"] and player.force.technologies["space-platform"].researched or false
     
-    if spidertron_researched and not player.surface.name:find("platform") then
+    if space_platform_researched then
         player.set_shortcut_available("orbital-spidertron-deploy", true)
     else
         player.set_shortcut_available("orbital-spidertron-deploy", false)
@@ -1056,6 +1216,7 @@ end
 
 -- Improved platform inventory scanner with better debugging
 function map_gui.scan_platform_inventory(vehicle_data)
+    -- game.print("[DEBUG] scan_platform_inventory called")
     local available_items = {}
     local hub = vehicle_data.hub
     
@@ -1075,42 +1236,43 @@ function map_gui.scan_platform_inventory(vehicle_data)
     
     -- If hub is not valid, return empty results
     if not hub or not hub.valid then
-        log("Hub is not valid when scanning inventory")
+        -- game.print("[DEBUG] Hub is not valid when scanning inventory")
         return available_items
     end
     
-    log("Scanning inventory of hub on platform: " .. vehicle_data.platform_name)
+    -- game.print("[DEBUG] Scanning inventory of hub on platform: " .. tostring(vehicle_data.platform_name))
     
     -- Only use chest inventory to avoid duplicates
     local inventory = hub.get_inventory(defines.inventory.chest)
     if not inventory then
-        log("No chest inventory found on hub")
+        -- game.print("[DEBUG] No chest inventory found on hub")
         return available_items
     end
     
-    log("Hub inventory has " .. #inventory .. " slots")
+    -- game.print("[DEBUG] Hub inventory has " .. tostring(#inventory) .. " slots")
     
     -- Scan each slot for items and their qualities
+    local scanned_slots = 0
     for i = 1, #inventory do
         local stack = inventory[i]
         if stack and stack.valid_for_read then
+            scanned_slots = scanned_slots + 1
             -- Check if this is one of our target items
             for _, item_name in ipairs(items_to_scan) do
                 if stack.name == item_name then
+                    -- game.print("[DEBUG] Found target item: " .. item_name .. " x" .. tostring(stack.count) .. " in slot " .. tostring(i))
                     -- Extract quality information
                     local quality_name = "Normal"
                     local quality_level = 1
                     local quality_color = {r=1, g=1, b=1}
                     
                     -- Try to get quality
-                    pcall(function()
-                        if stack.quality then
-                            quality_name = stack.quality.name
-                            quality_level = stack.quality.level
-                            quality_color = stack.quality.color
-                            log("Item has quality: " .. quality_name .. " (level " .. quality_level .. ")")
-                        end
-                    end)
+                    if stack.quality then
+                        quality_name = stack.quality.name
+                        quality_level = stack.quality.level
+                        quality_color = stack.quality.color
+                        -- game.print("[DEBUG] Item has quality: " .. quality_name .. " (level " .. tostring(quality_level) .. ")")
+                    end
                     
                     -- Create a quality key for grouping
                     local quality_key = quality_name
@@ -1131,17 +1293,19 @@ function map_gui.scan_platform_inventory(vehicle_data)
                     available_items[item_name].total = 
                         available_items[item_name].total + stack.count
                     
-                    log("Found " .. stack.count .. " " .. quality_name .. " quality " .. item_name .. " in slot " .. i)
+                    -- game.print("[DEBUG] Found " .. tostring(stack.count) .. " " .. quality_name .. " quality " .. item_name .. " in slot " .. tostring(i))
                 end
             end
         end
     end
     
+    -- game.print("[DEBUG] Scanned " .. tostring(scanned_slots) .. " non-empty slots")
+    
     -- Log summary
     for item_name, info in pairs(available_items) do
-        log("Total " .. item_name .. ": " .. info.total)
+        -- game.print("[DEBUG] Total " .. item_name .. ": " .. tostring(info.total))
         for quality_key, quality_data in pairs(info.by_quality) do
-            log("  - " .. quality_data.name .. " (level " .. quality_data.level .. "): " .. quality_data.count)
+            -- game.print("[DEBUG]   - " .. quality_data.name .. " (level " .. tostring(quality_data.level) .. "): " .. tostring(quality_data.count))
         end
     end
     
@@ -1226,6 +1390,10 @@ function handle_extras_menu_clicks(event)
             for _, field in pairs(text_fields) do
                 local name = field.name
                 local _, _, item_name, quality = string.find(name, "text_(.+)_(.+)")
+                local in_grid = false
+                if item_name and prototypes.item[item_name] and prototypes.item[item_name].place_as_equipment_result then
+                    in_grid = prototypes.item[item_name].place_as_equipment_result
+                end
                 
                 if item_name and quality then
                     local count = tonumber(field.text) or 0
@@ -1233,7 +1401,8 @@ function handle_extras_menu_clicks(event)
                         table.insert(selected_extras, {
                             name = item_name,
                             count = count,
-                            quality = quality
+                            quality = quality,
+                            in_grid = in_grid
                         })
                     end
                 end
@@ -1267,11 +1436,11 @@ function map_gui.on_gui_click(event)
     local player = game.get_player(event.player_index)
     if not player then return end
 
-    log("GUI click on element: " .. element.name)
+    -- log("GUI click on element: " .. element.name)
 
     -- Close deployment menu button
     if element.name == "close_deployment_menu_btn" then
-        log("Close deployment menu button clicked")
+        -- log("Close deployment menu button clicked")
         if player.gui.screen["spidertron_deployment_frame"] then
             player.gui.screen["spidertron_deployment_frame"].destroy()
         end
@@ -1290,7 +1459,7 @@ function map_gui.on_gui_click(event)
     local target_index_str = string.match(element.name, "^deploy_target_(%d+)$")
     if target_index_str then
         local index = tonumber(target_index_str)
-        log("Deploy to target triggered for index: " .. index)
+        -- log("Deploy to target triggered for index: " .. index)
 
         if index and storage.spidertrons and storage.spidertrons[index] then
             local vehicle = storage.spidertrons[index]
@@ -1310,7 +1479,7 @@ function map_gui.on_gui_click(event)
     local player_index_str = string.match(element.name, "^deploy_player_(%d+)$")
     if player_index_str then
         local index = tonumber(player_index_str)
-        log("Deploy to player triggered for index: " .. index)
+        -- log("Deploy to player triggered for index: " .. index)
 
         if index and storage.spidertrons and storage.spidertrons[index] then
             local vehicle = storage.spidertrons[index]
@@ -1362,10 +1531,11 @@ function map_gui.on_gui_click(event)
     local target_index_str = string.match(element.name, "^deploy_target_(%d+)$")
     if target_index_str then
         local index = tonumber(target_index_str)
-        log("Deploy to target triggered for index: " .. index)
+        -- game.print("[DEBUG] Deploy to target button clicked, index: " .. tostring(index))
 
         if index and storage.spidertrons and storage.spidertrons[index] then
             local vehicle = storage.spidertrons[index]
+            -- game.print("[DEBUG] Vehicle found: " .. tostring(vehicle.name) .. " (" .. tostring(vehicle.vehicle_name) .. ")")
 
             -- Close the dialog
             if player.gui.screen["spidertron_deployment_frame"] then
@@ -1373,7 +1543,10 @@ function map_gui.on_gui_click(event)
             end
 
             -- Show the extras menu instead of immediately deploying
+            -- game.print("[DEBUG] Calling show_extras_menu with deploy_target='target'")
             map_gui.show_extras_menu(player, vehicle, "target")
+        else
+            -- game.print("[DEBUG] ERROR: Vehicle not found! index=" .. tostring(index) .. ", storage.spidertrons=" .. tostring(storage.spidertrons ~= nil))
         end
         return
     end
@@ -1382,7 +1555,7 @@ function map_gui.on_gui_click(event)
     local player_index_str = string.match(element.name, "^deploy_player_(%d+)$")
     if player_index_str then
         local index = tonumber(player_index_str)
-        log("Deploy to player triggered for index: " .. index)
+        -- log("Deploy to player triggered for index: " .. index)
 
         if index and storage.spidertrons and storage.spidertrons[index] then
             local vehicle = storage.spidertrons[index]
@@ -1440,11 +1613,36 @@ end
 
 -- Initialize player's shortcut buttons
 function map_gui.initialize_player_shortcuts(player)
-    -- First check if the technology is researched
-    local spidertron_researched = player.force.technologies["spidertron"].researched
     
-    -- Only enable if researched AND not on a platform
-    if spidertron_researched and not player.surface.name:find("platform") then
+    -- Check if TFMG mod is active
+    local is_tfmg_active = api.is_tfmg_active()
+    
+    -- Check if any spider-vehicle types exist in the game
+    if not vehicles_list.spider_vehicles then
+        vehicles_list.initialize()
+    end
+    local has_spider_vehicles = #vehicles_list.spider_vehicles > 0
+    
+    -- Determine if shortcut should be enabled
+    local should_enable = false
+    
+    if is_tfmg_active then
+        -- TFMG is active, enable from start (scout-o-trons are in starting inventory)
+        should_enable = true
+    elseif not has_spider_vehicles then
+        -- If no spider-vehicle types exist, unlock from start
+        should_enable = true
+    else
+        -- Check for space-platform technology (enables deployment of any vehicle)
+        local space_platform_tech = player.force.technologies["space-platform"]
+        local space_platform_researched = (space_platform_tech and space_platform_tech.researched) or false
+        
+        should_enable = space_platform_researched
+    end
+    
+    -- Enable shortcut if conditions are met
+    -- Note: Platform check removed - deployment code already prevents deployment to platforms
+    if should_enable then
         player.set_shortcut_available("orbital-spidertron-deploy", true)
     else
         player.set_shortcut_available("orbital-spidertron-deploy", false)
@@ -1480,7 +1678,7 @@ function map_gui.setup_cleanup_task()
             end
             
             if #stale_ids > 0 then
-                log("Cleaned up " .. #stale_ids .. " stale pod deployment records")
+                -- log("Cleaned up " .. #stale_ids .. " stale pod deployment records")
             end
         end
     end)

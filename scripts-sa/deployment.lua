@@ -61,11 +61,9 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                     
                     if stack.name == item_name then
                         local stack_quality = "Normal"
-                        pcall(function()
-                            if stack.quality then
-                                stack_quality = stack.quality.name
-                            end
-                        end)
+                        if stack.quality then
+                            stack_quality = stack.quality.name
+                        end
                         
                         if stack_quality == quality then
                             found_items[key] = (found_items[key] or 0) + stack.count
@@ -108,12 +106,10 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
             local equipment_quality = nil
             local equipment_quality_name = nil
             
-            pcall(function()
-                if equipment.quality then
-                    equipment_quality = equipment.quality
-                    equipment_quality_name = equipment.quality.name
-                end
-            end)
+            if equipment.quality then
+                equipment_quality = equipment.quality
+                equipment_quality_name = equipment.quality.name
+            end
             
             -- Only store basic equipment data and energy
             table.insert(grid_data, {
@@ -125,14 +121,73 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
             })
         end
     end
+
+    -- Add equipment items from extras to grid_data
+    if extras and #extras > 0 then
+        -- game.print("[EQUIPMENT DEBUG] Processing " .. #extras .. " extras items")
+        for _, item in ipairs(extras) do
+            -- game.print("[EQUIPMENT DEBUG] Checking item: " .. item.name .. ", in_grid: " .. tostring(item.in_grid) .. ", count: " .. tostring(item.count))
+            if item.in_grid then
+                local count = item.count or 1
+                -- game.print("[EQUIPMENT DEBUG] Item " .. item.name .. " has in_grid, processing " .. count .. " copies")
+                for i = 1, count do
+                    -- item.in_grid is a LuaEquipmentPrototype from place_as_equipment_result
+                    -- It has a .name property we can access directly
+                    local equipment_name = nil
+                    if item.in_grid then
+                        -- Try to get name property (works for LuaEquipmentPrototype, table, or string)
+                        if item.in_grid.name then
+                            equipment_name = item.in_grid.name
+                            -- game.print("[EQUIPMENT DEBUG] Extracted equipment name from in_grid.name: " .. equipment_name)
+                        elseif type(item.in_grid) == "string" then
+                            equipment_name = item.in_grid
+                            -- game.print("[EQUIPMENT DEBUG] Using in_grid as string: " .. equipment_name)
+                        else
+                            -- Fallback: get equipment name from item prototype
+                            -- game.print("[EQUIPMENT DEBUG] in_grid has no .name property, trying prototype lookup")
+                            local item_prototype = prototypes.item[item.name]
+                            if item_prototype and item_prototype.place_as_equipment_result then
+                                local place_result = item_prototype.place_as_equipment_result
+                                if place_result and place_result.name then
+                                    equipment_name = place_result.name
+                                    -- game.print("[EQUIPMENT DEBUG] Got equipment name from prototype: " .. equipment_name)
+                                elseif type(place_result) == "string" then
+                                    equipment_name = place_result
+                                    -- game.print("[EQUIPMENT DEBUG] Got equipment name from prototype string: " .. equipment_name)
+                                end
+                            else
+                                -- game.print("[EQUIPMENT DEBUG] No place_as_equipment_result found in prototype for " .. item.name)
+                            end
+                        end
+                    end
+                    
+                    -- Only add if we have a valid equipment name
+                    if equipment_name then
+                        -- game.print("[EQUIPMENT DEBUG] Adding to grid_data: equipment=" .. equipment_name .. ", fallback=" .. item.name)
+                        table.insert(grid_data, {
+                            name = equipment_name,
+                            position = nil,  -- Let grid.put find a position
+                            energy = nil,
+                            quality = item.quality,
+                            item_fallback_name = item.name
+                        })
+                    else
+                        -- game.print("[EQUIPMENT DEBUG] WARNING: No equipment_name found for item " .. item.name)
+                    end
+                end
+                has_grid = true  -- Mark as having grid if we added equipment
+            else
+                -- game.print("[EQUIPMENT DEBUG] Item " .. item.name .. " does not have in_grid set")
+            end
+        end
+        -- game.print("[EQUIPMENT DEBUG] Total grid_data items: " .. #grid_data .. ", has_grid: " .. tostring(has_grid))
+    end
     
     -- Store quality name
     local quality_name = nil
-    pcall(function()
-        if stack.quality then
-            quality_name = stack.quality.name
-        end
-    end)
+    if stack.quality then
+        quality_name = stack.quality.name
+    end
     
     -- Define landing position
     local landing_pos = {x = 0, y = 0}
@@ -301,9 +356,9 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     
     -- Store quality itself directly instead of just the name
     local quality = nil
-    pcall(function() 
-        quality = stack.quality 
-    end)
+    if stack.quality then
+        quality = stack.quality
+    end
     
     -- Remove the vehicle from the hub inventory
     stack.count = stack.count - 1
@@ -330,11 +385,9 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                 local stack = hub_inv[i]
                 if stack and stack.valid_for_read then
                     local stack_quality = "Normal"
-                    pcall(function()
-                        if stack.quality then
-                            stack_quality = stack.quality.name
-                        end
-                    end)
+                    if stack.quality then
+                        stack_quality = stack.quality.name
+                    end
                     
                     local key = stack.name .. ":" .. stack_quality
                     if extras_by_key[key] and extras_by_key[key].count > 0 then
@@ -357,12 +410,14 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     
     -- Try to use a cargo pod
     local cargo_pod = nil
-    local success, result = pcall(function()
-        return hub.create_cargo_pod()
-    end)
+    if hub and hub.valid then
+        local result = hub.create_cargo_pod()
+        if result and result.valid then
+            cargo_pod = result
+        end
+    end
     
-    if success and result and result.valid then
-        cargo_pod = result
+    if cargo_pod then
         
         -- NEW: Detect same-surface deployment and use surface-switching trick
         local actual_surface = player.surface
@@ -428,9 +483,9 @@ end
 local function get_ammo_damage(ammo_name)
     local damage_value = 0
     
-    pcall(function()
+    if prototypes.item and prototypes.item[ammo_name] then
         local ammo_prototype = prototypes.item[ammo_name]
-        if ammo_prototype and ammo_prototype.type == "ammo" then
+        if ammo_prototype.type == "ammo" and type(ammo_prototype.get_ammo_type) == "function" then
             -- Try to extract damage value from the prototype
             local ammo_data = ammo_prototype.get_ammo_type()
             if ammo_data and ammo_data.action and ammo_data.action.action_delivery and 
@@ -444,7 +499,7 @@ local function get_ammo_damage(ammo_name)
                 end
             end
         end
-    end)
+    end
     
     return damage_value
 end
@@ -466,28 +521,59 @@ local function find_compatible_slots_by_category(vehicle, ammo_inventory)
         slots_by_category[category] = {}
         
         for slot_index = 1, ammo_slot_count do
-            -- Clear existing slot content first
-            pcall(function() ammo_inventory[slot_index].clear() end)
-            
-            -- Try to insert a test amount
-            local success = false
-            pcall(function()
-                success = ammo_inventory[slot_index].set_stack({
+            local slot = ammo_inventory[slot_index]
+            if slot then
+                -- Clear existing slot content first
+                slot.clear()
+                
+                -- Try to insert a test amount
+                local success = slot.set_stack({
                     name = test_item,
                     count = 1
                 })
-            end)
-            
-            if success then
-                table.insert(slots_by_category[category], slot_index)
+                
+                if success then
+                    table.insert(slots_by_category[category], slot_index)
+                end
+                
+                -- Clear the test item
+                slot.clear()
             end
-            
-            -- Clear the test item
-            pcall(function() ammo_inventory[slot_index].clear() end)
         end
     end
     
     return slots_by_category
+end
+
+-- Helper function to return overflow items to hub inventory
+local function return_items_to_hub(hub, item_name, count, quality)
+    if not hub or not hub.valid or count <= 0 then
+        return
+    end
+    
+    local hub_inv = hub.get_inventory(defines.inventory.chest)
+    if not hub_inv then
+        return
+    end
+    
+    local insert_data = {
+        name = item_name,
+        count = count
+    }
+    
+    -- Add quality if it's a valid quality object, not a string
+    if quality and type(quality) == "table" then
+        insert_data.quality = quality
+    elseif quality and type(quality) == "string" then
+        -- Try to find quality prototype by name
+        if prototypes.quality and prototypes.quality[quality] then
+            insert_data.quality = prototypes.quality[quality]
+        end
+    end
+    
+    local inserted = hub_inv.insert(insert_data)
+    -- If hub is also full, items will be lost, but at least we tried
+    return inserted
 end
 
 -- Handle cargo pod landing
@@ -495,6 +581,12 @@ function deployment.on_cargo_pod_finished_descending(event)
     local pod = event.cargo_pod
     if not pod or not pod.valid then
         return
+    end
+    
+    -- Get hub from cargo pod origin
+    local hub = nil
+    if pod.cargo_pod_origin and pod.cargo_pod_origin.valid then
+        hub = pod.cargo_pod_origin
     end
     
     -- Loop through all pending pod deployments to find a match
@@ -517,12 +609,12 @@ function deployment.on_cargo_pod_finished_descending(event)
                 
                 -- Log quality information
                 if deployment_data.quality then
-                    log("Pod landing: Using quality name: " .. deployment_data.quality.name)
+                    -- log("Pod landing: Using quality name: " .. deployment_data.quality.name)
                 end
                 
                 -- Try approach 1: passing quality directly
                 local deployed_vehicle = nil
-                pcall(function()
+                if deployment_data.quality then
                     deployed_vehicle = pod.surface.create_entity({
                         name = entity_name,
                         position = pod.position,
@@ -530,19 +622,16 @@ function deployment.on_cargo_pod_finished_descending(event)
                         create_build_effect_smoke = true,
                         quality = deployment_data.quality
                     })
-                end)
+                end
 
-                -- If approach 1 failed, try approach 2: passing quality_name
+                -- If approach 1 failed, try approach 2: without quality
                 if not (deployed_vehicle and deployed_vehicle.valid) then
-                    pcall(function()
-                        deployed_vehicle = pod.surface.create_entity({
-                            name = entity_name,
-                            position = pod.position,
-                            force = player.force,
-                            create_build_effect_smoke = true,
-                            quality_name = deployment_data.quality_name
-                        })
-                    end)
+                    deployed_vehicle = pod.surface.create_entity({
+                        name = entity_name,
+                        position = pod.position,
+                        force = player.force,
+                        create_build_effect_smoke = true
+                    })
                 end
 
                 -- If both approaches failed, create without quality
@@ -557,12 +646,12 @@ function deployment.on_cargo_pod_finished_descending(event)
                 
                 -- Check if quality was preserved
                 if deployed_vehicle and deployed_vehicle.valid and deployed_vehicle.quality then
-                    log("Deployed vehicle has quality: " .. deployed_vehicle.quality.name)
+                    -- log("Deployed vehicle has quality: " .. deployed_vehicle.quality.name)
                 else
-                    log("Deployed vehicle has no quality or invalid quality")
+                    -- log("Deployed vehicle has no quality or invalid quality")
                 end
                 
-                -- Apply color if available
+                -- Apply color only if the spider has a color set (let game use default if not)
                 if vehicle_color and deployed_vehicle and deployed_vehicle.valid then
                     deployed_vehicle.color = vehicle_color
                 end
@@ -571,62 +660,115 @@ function deployment.on_cargo_pod_finished_descending(event)
                 if deployed_vehicle and deployed_vehicle.valid and vehicle_name ~= entity_name:gsub("^%l", string.upper) then
                     -- Try to set entity_label directly with delayed attempt
                     script.on_nth_tick(5, function()
-                        if deployed_vehicle and deployed_vehicle.valid then
-                            pcall(function()
-                                deployed_vehicle.entity_label = vehicle_name
-                                log("Set entity_label to: " .. vehicle_name .. " after delay")
-                            end)
+                        if deployed_vehicle and deployed_vehicle.valid and vehicle_name then
+                            deployed_vehicle.entity_label = vehicle_name
+                            -- log("Set entity_label to: " .. vehicle_name .. " after delay")
                         end
                         script.on_nth_tick(5, nil)  -- Clear the handler
                     end)
                 end
                 
+                --moved this up, so that we have the vehicle inventory available for our equipment grid filling.
+                local vehicle_inventory = nil
+                vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.car_trunk)
+                if not vehicle_inventory then
+                    vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_trunk)
+                end
+                if not vehicle_inventory then
+                    vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.chest)
+                end
+                
                 -- Transfer equipment grid using stored data
+                -- game.print("[EQUIPMENT DEBUG] Grid placement check: has_grid=" .. tostring(has_grid) .. ", vehicle_valid=" .. tostring(deployed_vehicle and deployed_vehicle.valid) .. ", has_grid_obj=" .. tostring(deployed_vehicle and deployed_vehicle.valid and deployed_vehicle.grid ~= nil))
                 if has_grid and deployed_vehicle and deployed_vehicle.valid and deployed_vehicle.grid then
                     local target_grid = deployed_vehicle.grid
+                    -- game.print("[EQUIPMENT DEBUG] Attempting to place " .. #grid_data .. " equipment items in grid")
                     for _, equip_data in ipairs(grid_data) do
+                        -- game.print("[EQUIPMENT DEBUG] Trying to place equipment: " .. equip_data.name .. " (fallback: " .. tostring(equip_data.item_fallback_name) .. ")")
                         -- Try to create equipment at the exact position first with quality
                         local new_equipment = nil
                         
                         -- First try creating with quality if available
-                        if equip_data.quality_name then
-                            pcall(function()
-                                new_equipment = target_grid.put({
-                                    name = equip_data.name,
-                                    position = equip_data.position,
-                                    quality = equip_data.quality,  -- Try passing quality object
-                                    quality_name = equip_data.quality_name  -- Also try with quality_name
-                                })
-                            end)
+                        if equip_data.quality_name and equip_data.quality then
+                            -- game.print("[EQUIPMENT DEBUG] Attempt 1: With quality " .. equip_data.quality_name)
+                            new_equipment = target_grid.put({
+                                name = equip_data.name,
+                                position = equip_data.position,
+                                quality = equip_data.quality
+                            })
+                            if new_equipment then
+                                -- game.print("[EQUIPMENT DEBUG] Successfully placed " .. equip_data.name .. " with quality")
+                            else
+                                -- game.print("[EQUIPMENT DEBUG] Failed to place with quality")
+                            end
                         end
                         
                         -- If that fails, try without quality
                         if not new_equipment then
+                            -- game.print("[EQUIPMENT DEBUG] Attempt 2: Without quality")
                             new_equipment = target_grid.put({
                                 name = equip_data.name,
                                 position = equip_data.position
                             })
+                            if new_equipment then
+                                -- game.print("[EQUIPMENT DEBUG] Successfully placed " .. equip_data.name .. " without quality")
+                            else
+                                -- game.print("[EQUIPMENT DEBUG] Failed to place without quality")
+                            end
                         end
                         
                         -- If that fails, try to put it somewhere else in the grid
                         if not new_equipment then
+                            -- game.print("[EQUIPMENT DEBUG] Attempt 3: Anywhere in grid")
                             new_equipment = target_grid.put({name = equip_data.name})
+                            if new_equipment then
+                                -- game.print("[EQUIPMENT DEBUG] Successfully placed " .. equip_data.name .. " anywhere in grid")
+                            else
+                                -- game.print("[EQUIPMENT DEBUG] Failed to place anywhere in grid")
+                            end
                         end
                         
                         -- Set energy level if successful
                         if new_equipment and new_equipment.valid and equip_data.energy then
                             new_equipment.energy = equip_data.energy
+                            -- game.print("[EQUIPMENT DEBUG] Set energy level for " .. equip_data.name)
+                        end
+
+                        if not new_equipment then --if we do fail to put the equipment anywhere, we'll go ahead and drop it in the trunk
+                            -- game.print("[EQUIPMENT DEBUG] All grid placement attempts failed, trying inventory fallback")
+                            if vehicle_inventory then
+                                local inserted = vehicle_inventory.insert({
+                                    name = equip_data.item_fallback_name, count = 1, quality = equip_data.quality
+                                })
+                                if inserted > 0 then
+                                    -- game.print("[EQUIPMENT DEBUG] Successfully inserted " .. equip_data.item_fallback_name .. " into inventory (count: " .. inserted .. ")")
+                                else
+                                    -- game.print("[EQUIPMENT DEBUG] FAILED to insert " .. equip_data.item_fallback_name .. " into inventory")
+                                end
+                                -- Return overflow to hub if insertion failed
+                                if inserted < 1 and hub then
+                                    return_items_to_hub(hub, equip_data.item_fallback_name, 1, equip_data.quality)
+                                end
+                            else
+                                -- game.print("[EQUIPMENT DEBUG] ERROR: vehicle_inventory is nil, cannot insert fallback item")
+                                -- Return to hub if no vehicle inventory
+                                if hub then
+                                    return_items_to_hub(hub, equip_data.item_fallback_name, 1, equip_data.quality)
+                                end
+                            end
                         end
                         
                         -- Log equipment quality
                         if new_equipment and new_equipment.valid and new_equipment.quality then
-                            log("Equipment " .. equip_data.name .. " deployed with quality: " .. new_equipment.quality.name)
+                            -- game.print("[EQUIPMENT DEBUG] Equipment " .. equip_data.name .. " deployed with quality: " .. new_equipment.quality.name)
                         else
-                            log("Equipment " .. equip_data.name .. " has no quality or invalid quality")
+                            -- game.print("[EQUIPMENT DEBUG] Equipment " .. equip_data.name .. " has no quality or invalid quality")
                         end
                     end
-                    log("Transferred equipment grid to deployed vehicle with " .. #grid_data .. " items")
+                else
+                    -- game.print("[EQUIPMENT DEBUG] Skipping grid placement - conditions not met")
                 end
+                -- log("Transferred equipment grid to deployed vehicle with " .. #grid_data .. " items")
                 
                 -- Provide fuel if the vehicle has a fuel inventory
                 if deployed_vehicle and deployed_vehicle.valid then
@@ -655,7 +797,12 @@ function deployment.on_cargo_pod_finished_descending(event)
                                 quality = best_fuel_item.quality
                             })
                             if inserted > 0 then
-                                log("Inserted " .. inserted .. "x " .. best_fuel_item.quality .. " " .. best_fuel_item.name .. " into fuel inventory")
+                                -- log("Inserted " .. inserted .. "x " .. best_fuel_item.quality .. " " .. best_fuel_item.name .. " into fuel inventory")
+                            end
+                            -- Return overflow to hub if not all fuel was inserted
+                            if inserted < best_fuel_item.count and hub then
+                                local overflow = best_fuel_item.count - inserted
+                                return_items_to_hub(hub, best_fuel_item.name, overflow, best_fuel_item.quality)
                             end
                             -- Remove used fuel from extras to avoid double-handling
                             for i, extra in ipairs(extras) do
@@ -671,26 +818,20 @@ function deployment.on_cargo_pod_finished_descending(event)
                             -- Fallback to 5 carbon if no fuel provided
                             local inserted = fuel_inventory.insert({name = "carbon", count = 5})
                             if inserted > 0 then
-                                log("Inserted " .. inserted .. " units of carbon into fuel inventory as fallback")
+                                -- log("Inserted " .. inserted .. " units of carbon into fuel inventory as fallback")
+                            end
+                            -- Return overflow to hub if not all carbon was inserted
+                            if inserted < 5 and hub then
+                                return_items_to_hub(hub, "carbon", 5 - inserted, nil)
                             end
                         end
                     end
                     
-                    -- Place items in the vehicle's inventory if possible
-                    local vehicle_inventory = nil
-                    pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.car_trunk) end)
-                    if not vehicle_inventory then
-                        pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_trunk) end)
-                    end
-                    if not vehicle_inventory then
-                        pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.chest) end)
-                    end
-
                     -- Check for ammo inventory (guns)
                     local ammo_inventory = nil
-                    pcall(function() ammo_inventory = deployed_vehicle.get_inventory(defines.inventory.car_ammo) end)
+                    ammo_inventory = deployed_vehicle.get_inventory(defines.inventory.car_ammo)
                     if not ammo_inventory then
-                        pcall(function() ammo_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_ammo) end)
+                        ammo_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_ammo)
                     end
 
                     -- If we have extras to distribute
@@ -701,12 +842,12 @@ function deployment.on_cargo_pod_finished_descending(event)
                         
                         for _, extra in ipairs(extras) do
                             local is_ammo = false
-                            pcall(function()
+                            if prototypes.item and prototypes.item[extra.name] then
                                 local item_prototype = prototypes.item[extra.name]
-                                if item_prototype and item_prototype.type == "ammo" then
+                                if item_prototype.type == "ammo" then
                                     is_ammo = true
                                 end
-                            end)
+                            end
                             
                             if is_ammo and ammo_inventory then
                                 table.insert(ammo_extras, extra)
@@ -756,14 +897,14 @@ function deployment.on_cargo_pod_finished_descending(event)
                                     end
                                     local a_level = 1
                                     local b_level = 1
-                                    pcall(function()
+                                    if prototypes.quality and a.quality and prototypes.quality[a.quality] then
                                         local a_quality_prototype = prototypes.quality[a.quality]
-                                        if a_quality_prototype then a_level = a_quality_prototype.level end
-                                    end)
-                                    pcall(function()
+                                        a_level = a_quality_prototype.level
+                                    end
+                                    if prototypes.quality and b.quality and prototypes.quality[b.quality] then
                                         local b_quality_prototype = prototypes.quality[b.quality]
-                                        if b_quality_prototype then b_level = b_quality_prototype.level end
-                                    end)
+                                        b_level = b_quality_prototype.level
+                                    end
                                     return a_level > b_level
                                 end)
                                 
@@ -774,19 +915,19 @@ function deployment.on_cargo_pod_finished_descending(event)
                                     local remaining_to_insert = priority_ammo.count
                                     for _, slot_index in ipairs(compatible_slots) do
                                         if remaining_to_insert <= 0 then break end
-                                        local to_insert = math.min(ammo_per_slot, remaining_to_insert)
-                                        pcall(function() ammo_inventory[slot_index].clear() end)
-                                        local success = false
-                                        pcall(function()
-                                            success = ammo_inventory[slot_index].set_stack({
+                                        local slot = ammo_inventory[slot_index]
+                                        if slot then
+                                            local to_insert = math.min(ammo_per_slot, remaining_to_insert)
+                                            slot.clear()
+                                            local success = slot.set_stack({
                                                 name = priority_ammo.name,
                                                 count = to_insert,
                                                 quality = priority_ammo.quality
                                             })
-                                        end)
-                                        if success then
-                                            ----player.print("Inserted " .. to_insert .. "x " .. priority_ammo.quality .. " " .. priority_ammo.name .. " into slot " .. slot_index)
-                                            remaining_to_insert = remaining_to_insert - to_insert
+                                            if success then
+                                                ----player.print("Inserted " .. to_insert .. "x " .. priority_ammo.quality .. " " .. priority_ammo.name .. " into slot " .. slot_index)
+                                                remaining_to_insert = remaining_to_insert - to_insert
+                                            end
                                         end
                                     end
                                     if remaining_to_insert > 0 and vehicle_inventory then
@@ -798,6 +939,14 @@ function deployment.on_cargo_pod_finished_descending(event)
                                         if inserted > 0 then
                                             ----player.print("Added " .. inserted .. "x " .. priority_ammo.quality .. " " .. priority_ammo.name .. " to vehicle inventory")
                                         end
+                                        -- Return overflow to hub if not all ammo was inserted
+                                        if inserted < remaining_to_insert and hub then
+                                            local overflow = remaining_to_insert - inserted
+                                            return_items_to_hub(hub, priority_ammo.name, overflow, priority_ammo.quality)
+                                        end
+                                    elseif remaining_to_insert > 0 and hub then
+                                        -- No vehicle inventory available, return all to hub
+                                        return_items_to_hub(hub, priority_ammo.name, remaining_to_insert, priority_ammo.quality)
                                     end
                                     if #ammo_priority > 1 and vehicle_inventory then
                                         for i = 2, #ammo_priority do
@@ -809,6 +958,11 @@ function deployment.on_cargo_pod_finished_descending(event)
                                             })
                                             if inserted > 0 then
                                                 ----player.print("Added " .. inserted .. "x " .. ammo.quality .. " " .. ammo.name .. " to vehicle inventory")
+                                            end
+                                            -- Return overflow to hub if not all ammo was inserted
+                                            if inserted < ammo.count and hub then
+                                                local overflow = ammo.count - inserted
+                                                return_items_to_hub(hub, ammo.name, overflow, ammo.quality)
                                             end
                                         end
                                     end
@@ -824,6 +978,14 @@ function deployment.on_cargo_pod_finished_descending(event)
                                             if inserted > 0 then
                                                 ----player.print("Added " .. inserted .. "x " .. ammo.quality .. " " .. ammo.name .. " to vehicle inventory")
                                             end
+                                            -- Return overflow to hub if not all ammo was inserted
+                                            if inserted < ammo.count and hub then
+                                                local overflow = ammo.count - inserted
+                                                return_items_to_hub(hub, ammo.name, overflow, ammo.quality)
+                                            end
+                                        elseif hub then
+                                            -- No vehicle inventory available, return all to hub
+                                            return_items_to_hub(hub, ammo.name, ammo.count, ammo.quality)
                                         end
                                     end
                                 end
@@ -832,15 +994,48 @@ function deployment.on_cargo_pod_finished_descending(event)
                         
                         -- Process other extras (including utilities)
                         if #other_extras > 0 and vehicle_inventory then
+                            -- game.print("[EQUIPMENT DEBUG] Processing " .. #other_extras .. " other_extras items")
                             for _, extra in ipairs(other_extras) do
-                                local inserted = vehicle_inventory.insert({
+                                local insert_data = {
                                     name = extra.name,
-                                    count = extra.count,
-                                    quality = extra.quality
-                                })
-                                if inserted > 0 then
-                                    ----player.print("Added " .. inserted .. "x " .. extra.quality .. " " .. extra.name .. " to vehicle inventory")
+                                    count = extra.count
+                                }
+                                -- Only add quality if it's a valid quality object, not a string
+                                if extra.quality and type(extra.quality) == "table" then
+                                    insert_data.quality = extra.quality
                                 end
+                                local item_prototype = prototypes.item[insert_data.name]
+                                local is_equipment = item_prototype and item_prototype.place_as_equipment_result ~= nil
+                                -- game.print("[EQUIPMENT DEBUG] other_extras item: " .. extra.name .. ", is_equipment=" .. tostring(is_equipment) .. ", count=" .. tostring(extra.count))
+                                local inserted = 0
+                                if not is_equipment then --if its an equipment grid item, dont insert it into the inventory
+                                    inserted = vehicle_inventory.insert(insert_data)
+                                    if inserted > 0 then
+                                        -- game.print("[EQUIPMENT DEBUG] Inserted " .. inserted .. "x " .. extra.name .. " into inventory")
+                                    else
+                                        -- game.print("[EQUIPMENT DEBUG] Failed to insert " .. extra.name .. " into inventory")
+                                    end
+                                    -- Return overflow to hub if not all items were inserted
+                                    if inserted < extra.count and hub then
+                                        local overflow = extra.count - inserted
+                                        return_items_to_hub(hub, extra.name, overflow, extra.quality)
+                                    end
+                                else
+                                    -- game.print("[EQUIPMENT DEBUG] Skipping " .. extra.name .. " - it's equipment (should be in grid)")
+                                end
+                            end
+                        elseif #other_extras > 0 and hub then
+                            -- No vehicle inventory available, return all extras to hub
+                            for _, extra in ipairs(other_extras) do
+                                local item_prototype = prototypes.item[extra.name]
+                                local is_equipment = item_prototype and item_prototype.place_as_equipment_result ~= nil
+                                if not is_equipment then
+                                    return_items_to_hub(hub, extra.name, extra.count, extra.quality)
+                                end
+                            end
+                        else
+                            if #other_extras > 0 then
+                                -- game.print("[EQUIPMENT DEBUG] WARNING: other_extras has " .. #other_extras .. " items but vehicle_inventory is nil")
                             end
                         end
                     end
@@ -857,6 +1052,13 @@ function deployment.on_cargo_pod_finished_descending(event)
                         max_radius = 2.0,
                         speed = {0, -0.03}
                     })
+                end
+                
+                -- Show deployment message if entity is scout-o-tron (TFMG compatibility)
+                if deployed_vehicle and deployed_vehicle.valid and entity_name == "scout-o-tron" then
+                    if player and player.valid and deployed_vehicle.gps_tag then
+                        player.print({"spider-ui.scout-o-tron-deploy-message", deployed_vehicle.gps_tag})
+                    end
                 end
                 
                 -- Remove this deployment from storage

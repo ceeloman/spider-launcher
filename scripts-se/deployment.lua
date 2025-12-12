@@ -21,10 +21,11 @@ end
 
 -- Helper function to check if player is on a space surface (where deployment is not allowed)
 local function is_on_space_surface(surface)
-    local success, zone = pcall(function()
-        return remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
-    end)
-    if success and zone then
+    if not surface or not remote.interfaces["space-exploration"] then
+        return false
+    end
+    local zone = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
+    if zone then
         return is_space_zone_type(zone.type)
     end
     return false
@@ -54,27 +55,110 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
         return
     end
     
-    -- In deploy_spider_vehicle, check if surface needs planet
-    if not player.surface.planet then
+    -- In deploy_spider_vehicle, check if departure surface (hub surface) needs planet
+    -- The departure surface is where the cargo pod launches from, not the target surface
+    if not hub.surface.planet then
         local available_planet = get_available_planet()
         if available_planet then
-            available_planet.associate_surface(player.surface)
+            available_planet.associate_surface(hub.surface)
         else
-            -- No available planets - silently abort
+            -- No available planets - log error and abort
+            -- log("[OVD Deployment] ERROR: No available planets found! Cannot deploy from surface " .. hub.surface.name .. " (index: " .. hub.surface.index .. ") - departure surface must be linked to a planet. This should have been done when the bay was placed.")
             return
         end
     end
     
-    -- SE-SPECIFIC: Check if deployment target is a space zone (cannot deploy on orbit, asteroid-belt, or asteroid-field)
-    -- However, allow same-surface deployment (deploying from orbit to the same orbit surface)
+    -- SE-SPECIFIC: Validate that deployment target is valid based on hub's location
+    -- If hub is on an orbit/asteroid-belt/asteroid-field, can only deploy to:
+    -- 1. The same surface (same orbit)
+    -- 2. The parent planet/moon of that orbit
+    local hub_zone = nil
+    local player_zone = nil
+    
+    if remote.interfaces["space-exploration"] then
+        hub_zone = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = hub.surface.index})
+        player_zone = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = player.surface.index})
+    end
+    
+    -- Debug logging
+    -- player.print("[OVD Deployment] Hub surface: " .. hub.surface.name .. " (index: " .. hub.surface.index .. ")")
+    -- player.print("[OVD Deployment] Player surface: " .. player.surface.name .. " (index: " .. player.surface.index .. ")")
+    
+    if hub_zone then
+        -- player.print("[OVD Deployment] Hub zone: " .. (hub_zone.name or "nil") .. " (type: " .. (hub_zone.type or "nil") .. ")")
+        if hub_zone.parent then
+            -- player.print("[OVD Deployment] Hub zone parent: " .. (hub_zone.parent.name or "nil"))
+        else
+            -- player.print("[OVD Deployment] Hub zone parent: nil")
+        end
+    else
+        -- player.print("[OVD Deployment] Hub zone: nil")
+    end
+    
+    if player_zone then
+        -- player.print("[OVD Deployment] Player zone: " .. (player_zone.name or "nil") .. " (type: " .. (player_zone.type or "nil") .. ")")
+    else
+        -- player.print("[OVD Deployment] Player zone: nil")
+    end
+    
+    -- If hub is on a space zone (orbit, asteroid-belt, asteroid-field), validate deployment target
+    if hub_zone and is_space_zone_type(hub_zone.type) then
+        local deployment_allowed = false
+        
+        -- Allow if deploying to the same surface (same orbit)
+        if player.surface == hub.surface then
+            deployment_allowed = true
+            -- player.print("[OVD Deployment] Allowed: Same surface deployment")
+        -- Allow if deploying to the parent planet/moon of the hub's orbit
+        elseif hub_zone.parent and player_zone then
+            -- player.print("[OVD Deployment] Checking parent match: hub parent = " .. (hub_zone.parent.name or "nil") .. ", player zone = " .. (player_zone.name or "nil"))
+            -- Check if player is on the parent planet/moon
+            if player_zone.name == hub_zone.parent.name then
+                deployment_allowed = true
+                -- player.print("[OVD Deployment] Allowed: Player is on parent planet/moon")
+            else
+                -- player.print("[OVD Deployment] Blocked: Player zone name doesn't match hub parent")
+            end
+        -- Fallback: If parent is nil, try name-based matching (e.g., "Nauvis Orbit" -> "Nauvis")
+        elseif not hub_zone.parent and player_zone and (player_zone.type == "planet" or player_zone.type == "moon") then
+            -- Extract planet name from orbit name (e.g., "Nauvis Orbit" -> "Nauvis")
+            local orbit_name = hub_zone.name or hub.surface.name
+            local expected_planet_name = orbit_name:gsub("%s+Orbit$", ""):gsub("%s+Asteroid%-Belt$", ""):gsub("%s+Asteroid%-Field$", "")
+            
+            -- player.print("[OVD Deployment] Fallback: Checking name match - orbit: " .. orbit_name .. ", expected planet: " .. expected_planet_name .. ", player zone: " .. (player_zone.name or "nil"))
+            
+            if player_zone.name == expected_planet_name then
+                deployment_allowed = true
+                -- player.print("[OVD Deployment] Allowed: Name-based match (fallback)")
+            else
+                -- player.print("[OVD Deployment] Blocked: Name-based match failed")
+            end
+        else
+            if not hub_zone.parent then
+                -- player.print("[OVD Deployment] Blocked: Hub zone has no parent and name fallback failed")
+            end
+            if not player_zone then
+                -- player.print("[OVD Deployment] Blocked: Player zone is nil")
+            end
+        end
+        
+        -- Block deployment if not allowed
+        if not deployment_allowed then
+            -- player.print("[OVD Deployment] Deployment BLOCKED - returning early")
+            return
+        end
+    else
+        if not hub_zone then
+            -- player.print("[OVD Deployment] Hub not on space zone - allowing deployment")
+        elseif not is_space_zone_type(hub_zone.type) then
+            -- player.print("[OVD Deployment] Hub zone type is not space type - allowing deployment")
+        end
+    end
+    
+    -- Additional check: If player is on a space surface, hub must be on the same space surface
     local player_is_on_space = is_on_space_surface(player.surface)
     local hub_is_on_space = is_on_space_surface(hub.surface)
     
-    -- Allow deployment if:
-    -- 1. Player is on a space surface AND hub is on the same space surface (same-surface deployment)
-    -- 2. Player is on a planet (deploying to planet)
-    -- Block deployment if:
-    -- 1. Player is on a space surface AND hub is on a different surface (shouldn't happen, but safety check)
     if player_is_on_space then
         if not hub_is_on_space then
             -- Player on space but hub on different surface - shouldn't happen, but block it
@@ -85,7 +169,6 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
             -- Different space surfaces - block deployment
             return
         end
-        -- Same space surface - allow deployment (fall through to continue)
     end
     
     -- If extras are requested, verify they're available
@@ -117,11 +200,9 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                     
                     if stack.name == item_name then
                         local stack_quality = "Normal"
-                        pcall(function()
-                            if stack.quality then
-                                stack_quality = stack.quality.name
-                            end
-                        end)
+                        if stack.quality then
+                            stack_quality = stack.quality.name
+                        end
                         
                         if stack_quality == quality then
                             found_items[key] = (found_items[key] or 0) + stack.count
@@ -164,12 +245,10 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
             local equipment_quality = nil
             local equipment_quality_name = nil
             
-            pcall(function()
-                if equipment.quality then
-                    equipment_quality = equipment.quality
-                    equipment_quality_name = equipment.quality.name
-                end
-            end)
+            if equipment.quality then
+                equipment_quality = equipment.quality
+                equipment_quality_name = equipment.quality.name
+            end
             
             -- Only store basic equipment data and energy
             table.insert(grid_data, {
@@ -184,11 +263,9 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     
     -- Store quality name
     local quality_name = nil
-    pcall(function()
-        if stack.quality then
-            quality_name = stack.quality.name
-        end
-    end)
+    if stack.quality then
+        quality_name = stack.quality.name
+    end
     
     -- Define landing position
     local landing_pos = {x = 0, y = 0}
@@ -368,9 +445,9 @@ end
     
     -- Store quality itself directly instead of just the name
     local quality = nil
-    pcall(function() 
-        quality = stack.quality 
-    end)
+    if stack.quality then
+        quality = stack.quality
+    end
     
     -- Remove the vehicle from the hub inventory
     stack.count = stack.count - 1
@@ -401,11 +478,9 @@ end
                 if stack and stack.valid_for_read then
                     -- Get the quality of this stack
                     local stack_quality = "Normal"
-                    pcall(function()
-                        if stack.quality then
-                            stack_quality = stack.quality.name
-                        end
-                    end)
+                    if stack.quality then
+                        stack_quality = stack.quality.name
+                    end
                     
                     -- Check if this matches any requested extras
                     local key = stack.name .. ":" .. stack_quality
@@ -468,39 +543,33 @@ end
     local cargo_hatch = nil
     
     -- Try different methods to access the hatch
-    pcall(function()
-        if cargo_bay.cargo_hatches then
-            if type(cargo_bay.cargo_hatches) == "table" then
-                if #cargo_bay.cargo_hatches > 0 then
-                    cargo_hatch = cargo_bay.cargo_hatches[1]
-                elseif cargo_bay.cargo_hatches[1] then
-                    cargo_hatch = cargo_bay.cargo_hatches[1]
-                end
+    if cargo_bay.cargo_hatches then
+        if type(cargo_bay.cargo_hatches) == "table" then
+            if #cargo_bay.cargo_hatches > 0 then
+                cargo_hatch = cargo_bay.cargo_hatches[1]
+            elseif cargo_bay.cargo_hatches[1] then
+                cargo_hatch = cargo_bay.cargo_hatches[1]
             end
         end
-    end)
-    
-    if not cargo_hatch then
-        pcall(function()
-            if cargo_bay.get_cargo_hatches then
-                local hatches = cargo_bay.get_cargo_hatches()
-                if hatches and type(hatches) == "table" then
-                    if #hatches > 0 then
-                        cargo_hatch = hatches[1]
-                    elseif hatches[1] then
-                        cargo_hatch = hatches[1]
-                    end
-                end
-            end
-        end)
     end
     
     if not cargo_hatch then
-        pcall(function()
-            if cargo_bay.cargo_hatch then
-                cargo_hatch = cargo_bay.cargo_hatch
+        if cargo_bay.get_cargo_hatches then
+            local hatches = cargo_bay.get_cargo_hatches()
+            if hatches and type(hatches) == "table" then
+                if #hatches > 0 then
+                    cargo_hatch = hatches[1]
+                elseif hatches[1] then
+                    cargo_hatch = hatches[1]
+                end
             end
-        end)
+        end
+    end
+    
+    if not cargo_hatch then
+        if cargo_bay.cargo_hatch then
+            cargo_hatch = cargo_bay.cargo_hatch
+        end
     end
     
     if not cargo_hatch or not cargo_hatch.valid then
@@ -509,12 +578,14 @@ end
     
     -- Try to use a cargo pod (create from the cargo hatch, not the cargo-bay)
     local cargo_pod = nil
-    local success, result = pcall(function()
-        return cargo_hatch.create_cargo_pod()
-    end)
+    if cargo_hatch and cargo_hatch.valid then
+        local result = cargo_hatch.create_cargo_pod()
+        if result and result.valid then
+            cargo_pod = result
+        end
+    end
     
-    if success and result and result.valid then
-        cargo_pod = result
+    if cargo_pod then
         
         -- NEW: Detect same-surface deployment and use surface-switching trick
         local actual_surface = player.surface
@@ -549,16 +620,14 @@ end
         
         --game.print("[OVD] Cargo pod destination set successfully")
         
-        -- Set cargo pod origin to the cargo hatch (or cargo-bay as fallback)
-        local origin_success = pcall(function()
-            cargo_pod.cargo_pod_origin = cargo_hatch.owner or cargo_hatch or cargo_bay
-        end)
-        
-        if not origin_success then
-            pcall(function()
-                cargo_pod.cargo_pod_origin = cargo_bay
-            end)
-        end
+        -- -- Set cargo pod origin to the cargo hatch (or cargo-bay as fallback)
+        -- if cargo_hatch and cargo_hatch.owner then
+        --     cargo_pod.cargo_pod_origin = cargo_hatch.owner
+        -- elseif cargo_hatch then
+        --     cargo_pod.cargo_pod_origin = cargo_hatch
+        -- elseif cargo_bay then
+        --     cargo_pod.cargo_pod_origin = cargo_bay
+        -- end
         
         -- Save all the deployment information for when the pod lands
         if not storage.pending_pod_deployments then
@@ -582,6 +651,7 @@ end
             entity_name = entity_name,
             item_name = vehicle_item_name,
             extras = collected_extras,
+            hub = hub,  -- Store hub for returning overflow items
             -- Same-surface deployment data
             actual_surface = is_same_surface and actual_surface or nil,
             actual_position = is_same_surface and actual_position or nil
@@ -600,12 +670,46 @@ end
     -- If cargo pod creation fails, notify the player and abort
 end
 
+-- Helper function to return overflow items to hub inventory
+local function return_items_to_hub(hub, item_name, count, quality)
+    if not hub or not hub.valid or count <= 0 then
+        return
+    end
+    
+    local hub_inv = hub.get_inventory(defines.inventory.chest)
+    if not hub_inv then
+        return
+    end
+    
+    local insert_data = {
+        name = item_name,
+        count = count
+    }
+    
+    -- Add quality if it's a valid quality object, not a string
+    if quality and type(quality) == "table" then
+        insert_data.quality = quality
+    elseif quality and type(quality) == "string" then
+        -- Try to find quality prototype by name
+        if prototypes.quality and prototypes.quality[quality] then
+            insert_data.quality = prototypes.quality[quality]
+        end
+    end
+    
+    local inserted = hub_inv.insert(insert_data)
+    -- If hub is also full, items will be lost, but at least we tried
+    return inserted
+end
+
 -- Handle cargo pod landing
 function deployment.on_cargo_pod_finished_descending(event)
     local pod = event.cargo_pod
     if not pod or not pod.valid then
         return
     end
+    
+    -- Get hub from deployment data (preferred) or cargo pod origin (fallback)
+    local hub = nil
     
     -- Loop through all pending pod deployments to find a match
     if storage.pending_pod_deployments then
@@ -630,9 +734,16 @@ function deployment.on_cargo_pod_finished_descending(event)
                 local entity_name = deployment_data.entity_name
                 local extras = deployment_data.extras or {}
                 
+                -- Get hub from deployment data (stored when pod was created)
+                if deployment_data.hub and deployment_data.hub.valid then
+                    hub = deployment_data.hub
+                end
+                -- Note: If hub is not available, overflow items cannot be returned
+                -- This is acceptable as the primary goal is to prevent item deletion
+                
                 -- Try approach 1: passing quality directly
                 local deployed_vehicle = nil
-                pcall(function()
+                if deployment_data.quality then
                     deployed_vehicle = pod.surface.create_entity({
                         name = entity_name,
                         position = pod.position,
@@ -640,19 +751,16 @@ function deployment.on_cargo_pod_finished_descending(event)
                         create_build_effect_smoke = true,
                         quality = deployment_data.quality
                     })
-                end)
+                end
 
-                -- If approach 1 failed, try approach 2: passing quality_name
+                -- If approach 1 failed, try approach 2: without quality
                 if not (deployed_vehicle and deployed_vehicle.valid) then
-                    pcall(function()
-                        deployed_vehicle = pod.surface.create_entity({
-                            name = entity_name,
-                            position = pod.position,
-                            force = player.force,
-                            create_build_effect_smoke = true,
-                            quality_name = deployment_data.quality_name
-                        })
-                    end)
+                    deployed_vehicle = pod.surface.create_entity({
+                        name = entity_name,
+                        position = pod.position,
+                        force = player.force,
+                        create_build_effect_smoke = true
+                    })
                 end
 
                 -- If both approaches failed, create without quality
@@ -674,10 +782,8 @@ function deployment.on_cargo_pod_finished_descending(event)
                 if deployed_vehicle and deployed_vehicle.valid and vehicle_name ~= entity_name:gsub("^%l", string.upper) then
                     -- Try to set entity_label directly with delayed attempt
                     script.on_nth_tick(5, function()
-                        if deployed_vehicle and deployed_vehicle.valid then
-                            pcall(function()
-                                deployed_vehicle.entity_label = vehicle_name
-                            end)
+                        if deployed_vehicle and deployed_vehicle.valid and vehicle_name then
+                            deployed_vehicle.entity_label = vehicle_name
                         end
                         script.on_nth_tick(5, nil)  -- Clear the handler
                     end)
@@ -691,15 +797,12 @@ function deployment.on_cargo_pod_finished_descending(event)
                         local new_equipment = nil
                         
                         -- First try creating with quality if available
-                        if equip_data.quality_name then
-                            pcall(function()
-                                new_equipment = target_grid.put({
-                                    name = equip_data.name,
-                                    position = equip_data.position,
-                                    quality = equip_data.quality,  -- Try passing quality object
-                                    quality_name = equip_data.quality_name  -- Also try with quality_name
-                                })
-                            end)
+                        if equip_data.quality_name and equip_data.quality then
+                            new_equipment = target_grid.put({
+                                name = equip_data.name,
+                                position = equip_data.position,
+                                quality = equip_data.quality
+                            })
                         end
                         
                         -- If that fails, try without quality
@@ -748,6 +851,11 @@ function deployment.on_cargo_pod_finished_descending(event)
                                 count = best_fuel_item.count,
                                 quality = best_fuel_item.quality
                             })
+                            -- Return overflow to hub if not all fuel was inserted
+                            if inserted < best_fuel_item.count and hub then
+                                local overflow = best_fuel_item.count - inserted
+                                return_items_to_hub(hub, best_fuel_item.name, overflow, best_fuel_item.quality)
+                            end
                             -- Remove used fuel from extras to avoid double-handling
                             for i, extra in ipairs(extras) do
                                 if extra.name == best_fuel_item.name and extra.quality == best_fuel_item.quality then
@@ -760,25 +868,29 @@ function deployment.on_cargo_pod_finished_descending(event)
                             end
                         else
                             -- Fallback to 5 carbon if no fuel provided
-                            fuel_inventory.insert({name = "carbon", count = 5})
+                            local inserted = fuel_inventory.insert({name = "carbon", count = 5})
+                            -- Return overflow to hub if not all carbon was inserted
+                            if inserted < 5 and hub then
+                                return_items_to_hub(hub, "carbon", 5 - inserted, nil)
+                            end
                         end
                     end
                     
                     -- Place items in the vehicle's inventory if possible
                     local vehicle_inventory = nil
-                    pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.car_trunk) end)
+                    vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.car_trunk)
                     if not vehicle_inventory then
-                        pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_trunk) end)
+                        vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_trunk)
                     end
                     if not vehicle_inventory then
-                        pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.chest) end)
+                        vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.chest)
                     end
 
                     -- Check for ammo inventory (guns)
                     local ammo_inventory = nil
-                    pcall(function() ammo_inventory = deployed_vehicle.get_inventory(defines.inventory.car_ammo) end)
+                    ammo_inventory = deployed_vehicle.get_inventory(defines.inventory.car_ammo)
                     if not ammo_inventory then
-                        pcall(function() ammo_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_ammo) end)
+                        ammo_inventory = deployed_vehicle.get_inventory(defines.inventory.spider_ammo)
                     end
 
                     -- If we have extras to distribute
@@ -789,12 +901,12 @@ function deployment.on_cargo_pod_finished_descending(event)
                         
                         for _, extra in ipairs(extras) do
                             local is_ammo = false
-                            pcall(function()
+                            if prototypes.item and prototypes.item[extra.name] then
                                 local item_prototype = prototypes.item[extra.name]
-                                if item_prototype and item_prototype.type == "ammo" then
+                                if item_prototype.type == "ammo" then
                                     is_ammo = true
                                 end
-                            end)
+                            end
                             
                             if is_ammo and ammo_inventory then
                                 table.insert(ammo_extras, extra)
@@ -811,12 +923,21 @@ function deployment.on_cargo_pod_finished_descending(event)
                                     count = ammo.count,
                                     quality = ammo.quality
                                 })
-                                if inserted < ammo.count and vehicle_inventory then
-                                    vehicle_inventory.insert({
+                                local remaining = ammo.count - inserted
+                                if remaining > 0 and vehicle_inventory then
+                                    local vehicle_inserted = vehicle_inventory.insert({
                                         name = ammo.name,
-                                        count = ammo.count - inserted,
+                                        count = remaining,
                                         quality = ammo.quality
                                     })
+                                    -- Return overflow to hub if vehicle inventory is also full
+                                    if vehicle_inserted < remaining and hub then
+                                        local overflow = remaining - vehicle_inserted
+                                        return_items_to_hub(hub, ammo.name, overflow, ammo.quality)
+                                    end
+                                elseif remaining > 0 and hub then
+                                    -- No vehicle inventory available, return all overflow to hub
+                                    return_items_to_hub(hub, ammo.name, remaining, ammo.quality)
                                 end
                             end
                         end
@@ -824,11 +945,21 @@ function deployment.on_cargo_pod_finished_descending(event)
                         -- Process other extras (including utilities)
                         if #other_extras > 0 and vehicle_inventory then
                             for _, extra in ipairs(other_extras) do
-                                vehicle_inventory.insert({
+                                local inserted = vehicle_inventory.insert({
                                     name = extra.name,
                                     count = extra.count,
                                     quality = extra.quality
                                 })
+                                -- Return overflow to hub if not all items were inserted
+                                if inserted < extra.count and hub then
+                                    local overflow = extra.count - inserted
+                                    return_items_to_hub(hub, extra.name, overflow, extra.quality)
+                                end
+                            end
+                        elseif #other_extras > 0 and hub then
+                            -- No vehicle inventory available, return all extras to hub
+                            for _, extra in ipairs(other_extras) do
+                                return_items_to_hub(hub, extra.name, extra.count, extra.quality)
                             end
                         end
                     end

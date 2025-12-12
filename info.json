@@ -7,8 +7,9 @@
   "dependencies": [
     "base >= 2.0.43",
     "? space-age",
-    "? space-exploration",
+    "! space-exploration",
     "? ceelos-vehicle-tweaks"
   ],
+  "space_travel_required": true,
   "description": "Deploy Spidertrons, cars, tanks and any other vehicles to the planet below, and ready with ammo, fuel and construction robots."
 } 
