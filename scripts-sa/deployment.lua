@@ -819,6 +819,11 @@ function deployment.on_cargo_pod_finished_descending(event)
                     end)
                 end
 
+                -- if vehicle deployed successfully, trigger the raised built event for other mods to detect vehicle deployment.
+                if deployed_vehicle and deployed_vehicle.valid then
+                    script.raise_script_built({entity = deployed_vehicle})
+                end
+
                 --moved this up, so that we have the vehichle inventory available for our equipment grid filling.
                 local vehicle_inventory = nil
                 pcall(function() vehicle_inventory = deployed_vehicle.get_inventory(defines.inventory.car_trunk) end)
