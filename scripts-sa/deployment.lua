@@ -3,7 +3,6 @@
 local deployment = {}
 
 -- Deploy a spider vehicle from orbit with optional extra items
--- Deploy a spider vehicle from orbit with optional extra items
 function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, extras)
     -- Get necessary data from the vehicle
     local hub = vehicle_data.hub
@@ -649,6 +648,10 @@ function deployment.on_cargo_pod_finished_descending(event)
                     -- log("Deployed vehicle has quality: " .. deployed_vehicle.quality.name)
                 else
                     -- log("Deployed vehicle has no quality or invalid quality")
+                end
+                
+                if deployed_vehicle and deployed_vehicle.valid then
+                    script.raise_script_built({entity = deployed_vehicle})
                 end
                 
                 -- Apply color only if the spider has a color set (let game use default if not)

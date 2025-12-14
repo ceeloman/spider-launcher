@@ -1,6 +1,12 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.9.1
+Date: 2025-12-14
+  Features:
+    - Enhanced deployment logic to handle player surface transitions and ensure proper vehicle deployment from orbit.
+    - Script created vehicles are now correct added to the built table
+---------------------------------------------------------------------------------------------------
 Version: 2.9.0
-Date: 2025-01-XX
+Date: 2025-12-12
   Features:
     - Same-surface deployment support
       - Vehicles can now be deployed to the same surface they're launched from

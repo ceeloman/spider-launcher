@@ -264,26 +264,98 @@ script.on_event(defines.events.on_gui_closed, function(event)
     end
 end)
 
+script.on_event(defines.events.on_tick, function(event)
+    if not storage.pending_deployment then return end
+    
+    for player_index, data in pairs(storage.pending_deployment) do
+        if not data.processed then
+            data.processed = true
+            -- Skip this tick, process next tick
+        else
+            local player = game.get_player(player_index)
+            if player then
+                local vehicles = map_gui.find_orbital_vehicles(data.planet_surface)
+                if #vehicles == 0 then
+                    player.print("No vehicles are deployable to " .. data.planet_name .. ".")
+                else
+                    map_gui.show_deployment_menu(player, vehicles)
+                end
+            end
+            storage.pending_deployment[player_index] = nil
+        end
+    end
+end)
+
 -- Handle shortcut button clicks
 script.on_event(defines.events.on_lua_shortcut, function(event)
     if event.prototype_name == "orbital-spidertron-deploy" then
         local player = game.get_player(event.player_index)
         if not player then return end
         
-        -- Check if player is on a platform surface - can't deploy vehicles to platforms
+        --game.print("[Deploy] Player surface: " .. player.surface.name)
+        --game.print("[Deploy] Is platform surface: " .. tostring(player.surface.platform ~= nil))
+        
+        -- Check if player is on a platform surface - switch to planet and open map GUI
         if player.surface.platform then
-            player.print("Cannot deploy vehicles to a platform surface.")
-            return
+            --game.print("[Deploy] Player is on platform surface, extracting planet...")
+            
+            -- Extract the planet name from the platform's space_location
+            local planet_name = nil
+            if player.surface.platform.space_location then
+                local location_str = tostring(player.surface.platform.space_location)
+                --game.print("[Deploy] Platform space_location string: " .. location_str)
+                planet_name = location_str:match(": ([^%(]+) %(planet%)")
+                --game.print("[Deploy] Extracted planet name: " .. tostring(planet_name))
+            else
+                --game.print("[Deploy] Platform has no space_location property")
+            end
+            
+            if planet_name then
+                -- Get the planet surface
+                local planet_surface = game.get_surface(planet_name)
+                --game.print("[Deploy] Planet surface lookup result: " .. tostring(planet_surface ~= nil))
+                if planet_surface then
+                    --game.print("[Deploy] Found planet surface: " .. planet_surface.name)
+                    
+                    -- Close any open GUIs
+                    if player.opened then
+                        player.opened = nil
+                    end
+
+                    -- Open map view at 0,0 on the planet surface
+                    local target_position = {x = 0, y = 0}
+                    player.set_controller{
+                        type = defines.controllers.remote,
+                        surface = planet_surface,
+                        position = target_position
+                    }
+
+                    -- Store data needed for next tick
+                    storage.pending_deployment = storage.pending_deployment or {}
+                    storage.pending_deployment[player.index] = {
+                        planet_surface = planet_surface,
+                        planet_name = planet_name
+                    }
+                    return
+                end
+            else
+                --game.print("[Deploy] ERROR: Could not determine which planet this platform is orbiting")
+                player.print("Vehicle Deployment is not possible while the platform is in transit")
+                return
+            end
         end
         
         -- Find orbital spider vehicles
+        --game.print("[Deploy] Player not on platform, searching for vehicles on surface: " .. player.surface.name)
         local vehicles = map_gui.find_orbital_vehicles(player.surface)
+        --game.print("[Deploy] Found " .. #vehicles .. " vehicles for surface: " .. player.surface.name)
         if #vehicles == 0 then
             player.print("No vehicles are deployable to this surface.")
             return
         end
         
         -- Show selection dialog with appropriate deployment options
+        --game.print("[Deploy] Showing deployment menu with " .. #vehicles .. " vehicles")
         map_gui.show_deployment_menu(player, vehicles)
     end
 end)
