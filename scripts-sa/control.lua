@@ -233,8 +233,22 @@ script.on_event(defines.events.on_gui_text_changed, function(event)
         
         -- Update slider if valid
         if slider and slider.valid then
-            -- Clamp value to valid range
-            value = math.max(0, math.min(value, slider.slider_maximum))
+            -- Get max value from multiple sources (tags, slider_maximum)
+            local max_value = nil
+            if element.tags and element.tags.max_value then
+                max_value = tonumber(element.tags.max_value)
+            elseif slider.tags and slider.tags.max_value then
+                max_value = tonumber(slider.tags.max_value)
+            elseif slider.slider_maximum and type(slider.slider_maximum) == "number" then
+                max_value = slider.slider_maximum
+            end
+            
+            -- Clamp value to valid range (0 to available amount)
+            if max_value and type(max_value) == "number" then
+                value = math.max(0, math.min(value, max_value))
+            else
+                value = math.max(0, value)
+            end
             value = math.floor(value)
             
             -- Update the slider

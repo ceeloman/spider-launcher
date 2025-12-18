@@ -1,4 +1,14 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.9.3
+Date: 2025-12-18
+  Bug fixes:
+    - Fixed nil error when text field slider_maximum is not set
+    - Text field input now automatically clamps to available item amount
+      - Typing a value higher than available items (e.g., 20 when only 3 available) automatically adjusts to the maximum available
+    - Fixed ghost equipment from old TFMG versions being deployed with vehicles
+      - Ghost equipment is now automatically detected and removed from vehicle grids before deployment
+      - Prevents crashes and unwanted equipment ghosts from being transferred
+---------------------------------------------------------------------------------------------------
 Version: 2.9.2
 Date: 2025-12-15
   Bug fixes:

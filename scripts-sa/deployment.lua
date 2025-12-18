@@ -100,7 +100,43 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     
     if stack.grid then
         has_grid = true
+        -- game.print("[EQUIPMENT DEBUG] Reading grid from stack, found " .. #stack.grid.equipment .. " equipment items")
+        
+        -- First pass: collect ghost equipment positions to remove
+        local ghost_positions = {}
         for _, equipment in pairs(stack.grid.equipment) do
+            local equipment_name = equipment.name
+            local is_ghost = false
+            
+            -- Check if it's a ghost by name pattern
+            if equipment_name and equipment_name:match("%-ghost$") then
+                is_ghost = true
+                -- game.print("[EQUIPMENT DEBUG] Found ghost equipment: " .. equipment_name)
+            -- Check if it's a ghost by prototype type
+            elseif equipment.prototype and equipment.prototype.type == "equipment-ghost" then
+                is_ghost = true
+                -- game.print("[EQUIPMENT DEBUG] Found ghost equipment (by type): " .. tostring(equipment_name))
+            -- Check if name is just "equipment" (likely a ghost from old TFMG)
+            elseif equipment_name == "equipment" then
+                is_ghost = true
+                -- game.print("[EQUIPMENT DEBUG] Found generic 'equipment' (likely ghost): " .. equipment_name)
+            end
+            
+            if is_ghost and equipment.valid then
+                table.insert(ghost_positions, {x = equipment.position.x, y = equipment.position.y})
+            end
+        end
+        
+        -- Remove all ghost equipment from the grid
+        for _, pos in ipairs(ghost_positions) do
+            stack.grid.take({position = pos})
+            -- game.print("[EQUIPMENT DEBUG] Removed ghost equipment from grid at position {" .. pos.x .. ", " .. pos.y .. "}")
+        end
+        
+        -- Second pass: collect real equipment data
+        for _, equipment in pairs(stack.grid.equipment) do
+            local equipment_name = equipment.name
+            
             -- Store equipment quality
             local equipment_quality = nil
             local equipment_quality_name = nil
@@ -110,12 +146,7 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                 equipment_quality_name = equipment.quality.name
             end
             
-            -- Only store basic equipment data and energy
-            -- Strip "-ghost" suffix if present (can't place equipment ghosts directly)
-            local equipment_name = equipment.name
-            if equipment_name:match("%-ghost$") then
-                equipment_name = equipment_name:gsub("%-ghost$", "")
-            end
+            -- game.print("[EQUIPMENT DEBUG] Storing grid equipment: name=" .. tostring(equipment_name) .. ", position={" .. equipment.position.x .. ", " .. equipment.position.y .. "}, energy=" .. tostring(equipment.energy))
             
             table.insert(grid_data, {
                 name = equipment_name,
@@ -139,6 +170,7 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                     -- item.in_grid is a LuaEquipmentPrototype from place_as_equipment_result
                     -- It has a .name property we can access directly
                     local equipment_name = nil
+                    -- game.print("[EQUIPMENT DEBUG] Processing extra item: " .. item.name .. ", in_grid type=" .. type(item.in_grid))
                     if item.in_grid then
                         -- Try to get name property (works for LuaEquipmentPrototype, table, or string)
                         if item.in_grid.name then
@@ -151,29 +183,42 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                             -- Fallback: get equipment name from item prototype
                             -- game.print("[EQUIPMENT DEBUG] in_grid has no .name property, trying prototype lookup")
                             local item_prototype = prototypes.item[item.name]
-                            if item_prototype and item_prototype.place_as_equipment_result then
-                                local place_result = item_prototype.place_as_equipment_result
-                                if place_result and place_result.name then
-                                    equipment_name = place_result.name
-                                    -- game.print("[EQUIPMENT DEBUG] Got equipment name from prototype: " .. equipment_name)
-                                elseif type(place_result) == "string" then
-                                    equipment_name = place_result
-                                    -- game.print("[EQUIPMENT DEBUG] Got equipment name from prototype string: " .. equipment_name)
+                            if item_prototype then
+                                -- game.print("[EQUIPMENT DEBUG] Item prototype found: " .. tostring(item_prototype.name) .. ", place_as_equipment_result=" .. tostring(item_prototype.place_as_equipment_result ~= nil))
+                                if item_prototype.place_as_equipment_result then
+                                    local place_result = item_prototype.place_as_equipment_result
+                                    -- game.print("[EQUIPMENT DEBUG] place_as_equipment_result type=" .. type(place_result))
+                                    if place_result and place_result.name then
+                                        equipment_name = place_result.name
+                                        -- game.print("[EQUIPMENT DEBUG] Got equipment name from prototype: " .. equipment_name)
+                                    elseif type(place_result) == "string" then
+                                        equipment_name = place_result
+                                        -- game.print("[EQUIPMENT DEBUG] Got equipment name from prototype string: " .. equipment_name)
+                                    end
                                 end
                             else
-                                -- game.print("[EQUIPMENT DEBUG] No place_as_equipment_result found in prototype for " .. item.name)
+                                -- game.print("[EQUIPMENT DEBUG] No item prototype found for " .. item.name)
                             end
                         end
                     end
                     
-                    -- Only add if we have a valid equipment name
+                    -- Only add if we have a valid equipment name and it's not a ghost
                     if equipment_name then
-                        -- Strip "-ghost" suffix if present (can't place equipment ghosts directly)
-                        if equipment_name:match("%-ghost$") then
-                            equipment_name = equipment_name:gsub("%-ghost$", "")
+                        -- Skip ghost equipment (from old TFMG versions)
+                        if equipment_name:match("%-ghost$") or equipment_name == "equipment" then
+                            -- game.print("[EQUIPMENT DEBUG] Skipping ghost equipment from extras: " .. equipment_name)
+                            goto continue_extra
                         end
                         
-                        -- game.print("[EQUIPMENT DEBUG] Adding to grid_data: equipment=" .. equipment_name .. ", fallback=" .. item.name)
+                        local quality_str = "nil"
+                        if item.quality then
+                            if type(item.quality) == "table" and item.quality.name then
+                                quality_str = item.quality.name
+                            elseif type(item.quality) == "string" then
+                                quality_str = item.quality
+                            end
+                        end
+                        -- game.print("[EQUIPMENT DEBUG] Adding to grid_data: equipment=" .. equipment_name .. ", fallback=" .. item.name .. ", quality=" .. quality_str)
                         table.insert(grid_data, {
                             name = equipment_name,
                             position = nil,  -- Let grid.put find a position
@@ -184,6 +229,8 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                     else
                         -- game.print("[EQUIPMENT DEBUG] WARNING: No equipment_name found for item " .. item.name)
                     end
+                    
+                    ::continue_extra::
                 end
                 has_grid = true  -- Mark as having grid if we added equipment
             else
@@ -697,49 +744,69 @@ function deployment.on_cargo_pod_finished_descending(event)
                 if has_grid and deployed_vehicle and deployed_vehicle.valid and deployed_vehicle.grid then
                     local target_grid = deployed_vehicle.grid
                     -- game.print("[EQUIPMENT DEBUG] Attempting to place " .. #grid_data .. " equipment items in grid")
-                    for _, equip_data in ipairs(grid_data) do
-                        -- game.print("[EQUIPMENT DEBUG] Trying to place equipment: " .. equip_data.name .. " (fallback: " .. tostring(equip_data.item_fallback_name) .. ")")
+                    for idx, equip_data in ipairs(grid_data) do
+                        local pos_str = "nil"
+                        if equip_data.position then
+                            pos_str = "{" .. equip_data.position.x .. ", " .. equip_data.position.y .. "}"
+                        end
+                        local quality_str = "nil"
+                        if equip_data.quality then
+                            if type(equip_data.quality) == "table" and equip_data.quality.name then
+                                quality_str = equip_data.quality.name
+                            elseif type(equip_data.quality) == "string" then
+                                quality_str = equip_data.quality
+                            else
+                                quality_str = tostring(equip_data.quality)
+                            end
+                        elseif equip_data.quality_name then
+                            quality_str = equip_data.quality_name
+                        end
+                        local energy_str = equip_data.energy and tostring(equip_data.energy) or "nil"
+                        -- game.print("[EQUIPMENT DEBUG] Item " .. idx .. "/" .. #grid_data .. ": name=" .. tostring(equip_data.name) .. ", position=" .. pos_str .. ", quality=" .. quality_str .. ", energy=" .. energy_str .. ", fallback=" .. tostring(equip_data.item_fallback_name))
                         -- Try to create equipment at the exact position first with quality
                         local new_equipment = nil
                         
                         -- First try creating with quality if available
                         if equip_data.quality_name and equip_data.quality then
-                            -- game.print("[EQUIPMENT DEBUG] Attempt 1: With quality " .. equip_data.quality_name)
+                            -- game.print("[EQUIPMENT DEBUG] Attempt 1: With quality " .. equip_data.quality_name .. ", position=" .. pos_str)
                             new_equipment = target_grid.put({
                                 name = equip_data.name,
                                 position = equip_data.position,
                                 quality = equip_data.quality
                             })
-                            if new_equipment then
-                                -- game.print("[EQUIPMENT DEBUG] Successfully placed " .. equip_data.name .. " with quality")
-                            else
-                                -- game.print("[EQUIPMENT DEBUG] Failed to place with quality")
-                            end
+                            -- if new_equipment then
+                            --     local placed_pos = new_equipment.position
+                            --     game.print("[EQUIPMENT DEBUG] Successfully placed " .. equip_data.name .. " with quality " .. quality_str .. " at {" .. placed_pos.x .. ", " .. placed_pos.y .. "}")
+                            -- else
+                            --     game.print("[EQUIPMENT DEBUG] Failed to place " .. equip_data.name .. " with quality " .. quality_str .. " at position " .. pos_str)
+                            -- end
                         end
                         
                         -- If that fails, try without quality
                         if not new_equipment then
-                            -- game.print("[EQUIPMENT DEBUG] Attempt 2: Without quality")
+                            -- game.print("[EQUIPMENT DEBUG] Attempt 2: Without quality, position=" .. pos_str)
                             new_equipment = target_grid.put({
                                 name = equip_data.name,
                                 position = equip_data.position
                             })
-                            if new_equipment then
-                                -- game.print("[EQUIPMENT DEBUG] Successfully placed " .. equip_data.name .. " without quality")
-                            else
-                                -- game.print("[EQUIPMENT DEBUG] Failed to place without quality")
-                            end
+                            -- if new_equipment then
+                            --     local placed_pos = new_equipment.position
+                            --     game.print("[EQUIPMENT DEBUG] Successfully placed " .. equip_data.name .. " without quality at {" .. placed_pos.x .. ", " .. placed_pos.y .. "}")
+                            -- else
+                            --     game.print("[EQUIPMENT DEBUG] Failed to place " .. equip_data.name .. " without quality at position " .. pos_str)
+                            -- end
                         end
                         
                         -- If that fails, try to put it somewhere else in the grid
                         if not new_equipment then
-                            -- game.print("[EQUIPMENT DEBUG] Attempt 3: Anywhere in grid")
+                            -- game.print("[EQUIPMENT DEBUG] Attempt 3: Anywhere in grid (auto-position)")
                             new_equipment = target_grid.put({name = equip_data.name})
-                            if new_equipment then
-                                -- game.print("[EQUIPMENT DEBUG] Successfully placed " .. equip_data.name .. " anywhere in grid")
-                            else
-                                -- game.print("[EQUIPMENT DEBUG] Failed to place anywhere in grid")
-                            end
+                            -- if new_equipment then
+                            --     local placed_pos = new_equipment.position
+                            --     game.print("[EQUIPMENT DEBUG] Successfully placed " .. equip_data.name .. " anywhere in grid at {" .. placed_pos.x .. ", " .. placed_pos.y .. "}")
+                            -- else
+                            --     game.print("[EQUIPMENT DEBUG] Failed to place " .. equip_data.name .. " anywhere in grid")
+                            -- end
                         end
                         
                         -- Set energy level if successful
@@ -749,35 +816,46 @@ function deployment.on_cargo_pod_finished_descending(event)
                         end
 
                         if not new_equipment then --if we do fail to put the equipment anywhere, we'll go ahead and drop it in the trunk
-                            -- game.print("[EQUIPMENT DEBUG] All grid placement attempts failed, trying inventory fallback")
+                            -- game.print("[EQUIPMENT DEBUG] All grid placement attempts failed for " .. equip_data.name .. ", trying inventory fallback with item: " .. tostring(equip_data.item_fallback_name) .. ", quality: " .. quality_str)
                             if vehicle_inventory then
-                                local inserted = vehicle_inventory.insert({
-                                    name = equip_data.item_fallback_name, count = 1, quality = equip_data.quality
-                                })
-                                if inserted > 0 then
-                                    -- game.print("[EQUIPMENT DEBUG] Successfully inserted " .. equip_data.item_fallback_name .. " into inventory (count: " .. inserted .. ")")
-                                else
-                                    -- game.print("[EQUIPMENT DEBUG] FAILED to insert " .. equip_data.item_fallback_name .. " into inventory")
+                                local insert_data = {
+                                    name = equip_data.item_fallback_name or equip_data.name,
+                                    count = 1
+                                }
+                                if equip_data.quality then
+                                    insert_data.quality = equip_data.quality
                                 end
+                                local inserted = vehicle_inventory.insert(insert_data)
+                                -- if inserted > 0 then
+                                --     game.print("[EQUIPMENT DEBUG] Successfully inserted " .. (equip_data.item_fallback_name or equip_data.name) .. " into inventory (count: " .. inserted .. ", quality: " .. quality_str .. ")")
+                                -- else
+                                --     game.print("[EQUIPMENT DEBUG] FAILED to insert " .. (equip_data.item_fallback_name or equip_data.name) .. " into inventory (quality: " .. quality_str .. ")")
+                                -- end
                                 -- Return overflow to hub if insertion failed
                                 if inserted < 1 and hub then
-                                    return_items_to_hub(hub, equip_data.item_fallback_name, 1, equip_data.quality)
+                                    -- game.print("[EQUIPMENT DEBUG] Returning failed item to hub: " .. (equip_data.item_fallback_name or equip_data.name))
+                                    return_items_to_hub(hub, equip_data.item_fallback_name or equip_data.name, 1, equip_data.quality)
                                 end
                             else
-                                -- game.print("[EQUIPMENT DEBUG] ERROR: vehicle_inventory is nil, cannot insert fallback item")
+                                -- game.print("[EQUIPMENT DEBUG] ERROR: vehicle_inventory is nil, cannot insert fallback item " .. (equip_data.item_fallback_name or equip_data.name))
                                 -- Return to hub if no vehicle inventory
                                 if hub then
-                                    return_items_to_hub(hub, equip_data.item_fallback_name, 1, equip_data.quality)
+                                    -- game.print("[EQUIPMENT DEBUG] Returning item to hub: " .. (equip_data.item_fallback_name or equip_data.name))
+                                    return_items_to_hub(hub, equip_data.item_fallback_name or equip_data.name, 1, equip_data.quality)
                                 end
                             end
                         end
                         
                         -- Log equipment quality
-                        if new_equipment and new_equipment.valid and new_equipment.quality then
-                            -- game.print("[EQUIPMENT DEBUG] Equipment " .. equip_data.name .. " deployed with quality: " .. new_equipment.quality.name)
-                        else
-                            -- game.print("[EQUIPMENT DEBUG] Equipment " .. equip_data.name .. " has no quality or invalid quality")
-                        end
+                        -- if new_equipment and new_equipment.valid then
+                        --     if new_equipment.quality then
+                        --         local final_pos = new_equipment.position
+                        --         game.print("[EQUIPMENT DEBUG] Equipment " .. equip_data.name .. " deployed with quality: " .. new_equipment.quality.name .. " at {" .. final_pos.x .. ", " .. final_pos.y .. "}, energy: " .. tostring(new_equipment.energy))
+                        --     else
+                        --         local final_pos = new_equipment.position
+                        --         game.print("[EQUIPMENT DEBUG] Equipment " .. equip_data.name .. " deployed without quality at {" .. final_pos.x .. ", " .. final_pos.y .. "}, energy: " .. tostring(new_equipment.energy))
+                        --     end
+                        -- end
                     end
                 else
                     -- game.print("[EQUIPMENT DEBUG] Skipping grid placement - conditions not met")
