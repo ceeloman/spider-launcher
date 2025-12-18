@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.9.2
+Date: 2025-12-15
+  Bug fixes:
+    - Fixed "Can't place equipment ghost directly" error when deploying vehicles with equipment
+    - Equipment selection now filters out ghost equipment prototypes
+    - Added safeguards to strip ghost suffixes from equipment names during deployment
+---------------------------------------------------------------------------------------------------
 Version: 2.9.1
 Date: 2025-12-14
   Features:

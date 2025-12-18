@@ -465,7 +465,8 @@ function map_gui.list_compatible_items_in_inventory(inventory, compatible_items_
     for i = 1, #inventory do
         local stack = inventory[i]
         if stack and stack.valid_for_read then
-            if match_in_list(compatible_items_list, stack.name) then
+            -- Skip ghost items (can't place equipment ghosts directly)
+            if not stack.name:match("%-ghost$") and match_in_list(compatible_items_list, stack.name) then
                 if not available_items[stack.name] then
                     available_items[stack.name] = {
                         total = 0,
@@ -706,14 +707,24 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         local compatible_equipment = {}
         if prototypes.equipment then
             for name, equipment_prototype in pairs(prototypes.equipment) do
+                -- Skip ghost equipment prototypes (can't place equipment ghosts directly)
+                if name:match("%-ghost$") then
+                    goto continue
+                end
+                
                 if equipment_prototype and equipment_prototype.equipment_categories then
                     local equipment_categories = equipment_prototype.equipment_categories
                     if list_match_list(equipment_categories, grid_categories) then
                         if equipment_prototype.take_result and equipment_prototype.take_result.name then
-                            table.insert(compatible_equipment, equipment_prototype.take_result.name)
+                            local item_name = equipment_prototype.take_result.name
+                            -- Skip ghost items (can't place equipment ghosts directly)
+                            if not item_name:match("%-ghost$") then
+                                table.insert(compatible_equipment, item_name)
+                            end
                         end
                     end
                 end
+                ::continue::
             end
         end
 
@@ -1392,7 +1403,26 @@ function handle_extras_menu_clicks(event)
                 local _, _, item_name, quality = string.find(name, "text_(.+)_(.+)")
                 local in_grid = false
                 if item_name and prototypes.item[item_name] and prototypes.item[item_name].place_as_equipment_result then
-                    in_grid = prototypes.item[item_name].place_as_equipment_result
+                    local place_result = prototypes.item[item_name].place_as_equipment_result
+                    -- Check if place_result is a ghost equipment and convert it
+                    if type(place_result) == "string" then
+                        if place_result:match("%-ghost$") then
+                            -- Strip ghost suffix
+                            in_grid = place_result:gsub("%-ghost$", "")
+                        else
+                            in_grid = place_result
+                        end
+                    elseif place_result and place_result.name then
+                        local eq_name = place_result.name
+                        if eq_name:match("%-ghost$") then
+                            -- Create a new table with non-ghost name
+                            in_grid = {name = eq_name:gsub("%-ghost$", "")}
+                        else
+                            in_grid = place_result
+                        end
+                    else
+                        in_grid = place_result
+                    end
                 end
                 
                 if item_name and quality then

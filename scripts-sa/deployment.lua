@@ -111,8 +111,14 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
             end
             
             -- Only store basic equipment data and energy
+            -- Strip "-ghost" suffix if present (can't place equipment ghosts directly)
+            local equipment_name = equipment.name
+            if equipment_name:match("%-ghost$") then
+                equipment_name = equipment_name:gsub("%-ghost$", "")
+            end
+            
             table.insert(grid_data, {
-                name = equipment.name,
+                name = equipment_name,
                 position = {x = equipment.position.x, y = equipment.position.y},
                 energy = equipment.energy,
                 quality = equipment_quality,
@@ -162,6 +168,11 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
                     
                     -- Only add if we have a valid equipment name
                     if equipment_name then
+                        -- Strip "-ghost" suffix if present (can't place equipment ghosts directly)
+                        if equipment_name:match("%-ghost$") then
+                            equipment_name = equipment_name:gsub("%-ghost$", "")
+                        end
+                        
                         -- game.print("[EQUIPMENT DEBUG] Adding to grid_data: equipment=" .. equipment_name .. ", fallback=" .. item.name)
                         table.insert(grid_data, {
                             name = equipment_name,
