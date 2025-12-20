@@ -45,3 +45,14 @@ data:extend({
     flags = {"icon"}
   }
 })
+
+data:extend({
+  {
+    type = "sprite",
+    name = "ovd_cargo_pod",
+    filename = "__base__/graphics/icons/cargo-pod.png",
+    size = 64,
+    mipmap_count = 4,
+    flags = {"icon"}
+  }
+})

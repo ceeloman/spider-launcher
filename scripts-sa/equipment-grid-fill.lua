@@ -2,11 +2,14 @@
 -- Feature to auto-fill equipment grid ghosts from inventory
 
 local vehicles_list = require("scripts-sa.vehicles-list")
+local map_gui = require("scripts-sa.map-gui")
 
 local equipment_grid_fill = {}
 
--- Button name constant
+-- Button name constants
 equipment_grid_fill.BUTTON_NAME = "spider_launcher_equipment_fill_button"
+equipment_grid_fill.CARGO_POD_BUTTON_NAME = "spider_launcher_equipment_cargo_pod_button"
+equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME = "spider_launcher_equipment_toolbar"
 
 -- Check if opened is an equipment grid for a vehicle item
 -- Returns: grid, inventory, stack_index if valid, nil otherwise
@@ -260,6 +263,65 @@ function equipment_grid_fill.find_matching_items(inventory, ghosts)
     return matches
 end
 
+-- Find all equipment items in inventory (not just matching ghosts)
+-- Returns: array of {item_name, equipment_name, stack, index, count, quality}
+function equipment_grid_fill.find_all_equipment_items(inventory)
+    if not inventory then
+        return {}
+    end
+    
+    local equipment_items = {}
+    local equipment_map = {}  -- Map equipment_name:quality -> index in equipment_items
+    
+    -- Search inventory for all items that place equipment
+    for i = 1, #inventory do
+        local stack = inventory[i]
+        if stack and stack.valid_for_read then
+            local item_prototype = prototypes.item[stack.name]
+            if item_prototype and item_prototype.place_as_equipment_result then
+                local place_result = item_prototype.place_as_equipment_result
+                local result_equipment_name = nil
+                
+                -- Extract equipment name from place_result
+                if type(place_result) == "string" then
+                    result_equipment_name = place_result
+                elseif place_result and place_result.name then
+                    result_equipment_name = place_result.name
+                end
+                
+                if result_equipment_name then
+                    -- Create unique key for equipment name + quality
+                    local stack_quality = "Normal"
+                    if stack.quality then
+                        stack_quality = stack.quality.name
+                    end
+                    local key = result_equipment_name .. ":" .. stack_quality
+                    
+                    if not equipment_map[key] then
+                        -- First time seeing this equipment+quality combo
+                        local item_data = {
+                            item_name = stack.name,
+                            equipment_name = result_equipment_name,
+                            stack = stack,
+                            index = i,
+                            count = stack.count,
+                            quality = stack.quality
+                        }
+                        table.insert(equipment_items, item_data)
+                        equipment_map[key] = #equipment_items
+                    else
+                        -- Update count for existing equipment
+                        local idx = equipment_map[key]
+                        equipment_items[idx].count = equipment_items[idx].count + stack.count
+                    end
+                end
+            end
+        end
+    end
+    
+    return equipment_items
+end
+
 -- Get or create the fill button for equipment grid GUI
 function equipment_grid_fill.get_or_create_fill_button(player)
     -- game.print("[EQUIP FILL] get_or_create_fill_button called")
@@ -436,11 +498,328 @@ function equipment_grid_fill.get_or_create_fill_button(player)
         enabled = true  -- Always enabled - validation happens on click
     }
     
+    -- Create cargo pod button
+    local cargo_pod_button = button_flow.add{
+        type = "sprite-button",
+        name = equipment_grid_fill.CARGO_POD_BUTTON_NAME .. "_btn",
+        sprite = "ovd_cargo_pod",
+        style = "slot_sized_button",
+        tooltip = "Open Orbital Deployment Menu",
+        enabled = true
+    }
+    
     -- game.print("[EQUIP FILL] Button created successfully, fillable_count=" .. fillable_count .. ", total_ghosts=" .. #ghosts)
+    
+    -- Find all equipment items in the inventory
+    local equipment_items = equipment_grid_fill.find_all_equipment_items(target_inventory)
+    
+    -- Create separate equipment toolbar below the buttons if we have equipment items
+    if #equipment_items > 0 then
+        -- Create separate frame for equipment toolbar
+        -- Anchor it to the same GUI type - since it's created second, it will naturally be below
+        local equipment_anchor = nil
+        if gui_type then
+            equipment_anchor = {
+                gui = gui_type,
+                position = defines.relative_gui_position.right
+            }
+        end
+        
+        local equipment_frame_config = {
+            type = "frame",
+            name = equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME,
+            style = frame_style
+        }
+        
+        if equipment_anchor then
+            equipment_frame_config.anchor = equipment_anchor
+        end
+        
+        local success_equip, equipment_toolbar_frame = pcall(function()
+            return relative_gui.add(equipment_frame_config)
+        end)
+        
+        if not success_equip or not equipment_toolbar_frame then
+            equipment_frame_config.anchor = nil
+            success_equip, equipment_toolbar_frame = pcall(function()
+                return relative_gui.add(equipment_frame_config)
+            end)
+        end
+        
+        if success_equip and equipment_toolbar_frame then
+            -- Apply style modifications
+            equipment_toolbar_frame.style.horizontally_stretchable = false
+            equipment_toolbar_frame.style.vertically_stretchable = false
+            equipment_toolbar_frame.style.top_padding = 3
+            equipment_toolbar_frame.style.bottom_padding = 6
+            equipment_toolbar_frame.style.left_padding = 6
+            equipment_toolbar_frame.style.right_padding = 6
+            
+            -- Since both toolbars are anchored to the same GUI type at the same position,
+            -- the second one (equipment toolbar) will naturally be positioned below the first one
+            
+            -- Create button_frame for equipment
+            local equipment_button_frame = equipment_toolbar_frame.add{
+                type = "frame",
+                name = "button_frame",
+                direction = "vertical",
+                style = inner_frame_style
+            }
+            
+            equipment_button_frame.style.vertically_stretchable = false
+            
+            -- Create scroll pane for equipment items
+            local equipment_scroll = equipment_button_frame.add{
+                type = "scroll-pane",
+                name = "equipment_scroll",
+                horizontal_scroll_policy = "never",
+                vertical_scroll_policy = "auto"
+            }
+            equipment_scroll.style.maximal_height = 300
+            equipment_scroll.style.minimal_width = 20
+            equipment_scroll.style.maximal_width = 64
+            
+            -- Create flow for equipment buttons (vertical layout)
+            local equipment_flow = equipment_scroll.add{
+                type = "flow",
+                name = "equipment_flow",
+                direction = "vertical"
+            }
+            equipment_flow.style.vertical_spacing = 2
+            
+            -- Add buttons for each equipment item
+            for _, item_data in ipairs(equipment_items) do
+                local item_prototype = prototypes.item[item_data.item_name]
+                
+                if item_prototype then
+                    -- Use item name as sprite - Factorio will resolve the icon automatically
+                    -- Format: "item/item-name" for item icons
+                    local icon_sprite = "item/" .. item_data.item_name
+                    
+                    -- Create tooltip with item name and count in "name - countx" format
+                    local tooltip_text = item_prototype.localised_name or item_data.item_name
+                    if item_data.count > 1 then
+                        tooltip_text = {"", tooltip_text, " - ", item_data.count, "x"}
+                    end
+                    
+                    -- Create unique button name with equipment name and quality
+                    local quality_suffix = "normal"
+                    if item_data.quality then
+                        quality_suffix = item_data.quality.name or "normal"
+                    end
+                    local button_name = equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME .. "_" .. item_data.equipment_name .. "_" .. quality_suffix
+                    
+                    local equipment_button = equipment_flow.add{
+                        type = "sprite-button",
+                        name = button_name,
+                        sprite = icon_sprite,
+                        style = "slot_sized_button",
+                        tooltip = tooltip_text,
+                        enabled = true,
+                        tags = {
+                            equipment_name = item_data.equipment_name,
+                            item_name = item_data.item_name,
+                            inventory_index = item_data.index,
+                            quality = item_data.quality
+                        }
+                    }
+                end
+            end
+        end
+    end
+    
     return toolbar_frame
 end
 
--- Remove the fill button
+-- Refresh equipment toolbar counts
+function equipment_grid_fill.refresh_equipment_toolbar(player)
+    if not player or not player.valid then
+        return
+    end
+    
+    local relative_gui = player.gui.relative
+    if not relative_gui then
+        return
+    end
+    
+    local equipment_toolbar = relative_gui[equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME]
+    if not equipment_toolbar or not equipment_toolbar.valid then
+        -- Toolbar doesn't exist, try to recreate it by calling get_or_create_fill_button
+        -- This will create the toolbar if there are equipment items in inventory
+        equipment_grid_fill.get_or_create_fill_button(player)
+        return
+    end
+    
+    -- Get the equipment grid context to find the inventory
+    local grid, inventory, stack_index = equipment_grid_fill.get_equipment_grid_context(player)
+    if not grid or not grid.valid or not inventory then
+        return
+    end
+    
+    -- Find all equipment items in the inventory
+    local equipment_items = equipment_grid_fill.find_all_equipment_items(inventory)
+    
+    -- If no equipment items found, we're done (but toolbar structure should still exist)
+    if #equipment_items == 0 then
+        -- Remove all existing buttons since there are no items
+        local button_frame = equipment_toolbar["button_frame"]
+        if button_frame and button_frame.valid then
+            local equipment_scroll = button_frame["equipment_scroll"]
+            if equipment_scroll and equipment_scroll.valid then
+                local equipment_flow = equipment_scroll["equipment_flow"]
+                if equipment_flow and equipment_flow.valid then
+                    for _, child in pairs(equipment_flow.children) do
+                        if child.type == "sprite-button" then
+                            child.destroy()
+                        end
+                    end
+                end
+            end
+        end
+        return
+    end
+    
+    -- Create a map of equipment_name:quality -> item_data for quick lookup
+    local equipment_map = {}
+    for _, item_data in ipairs(equipment_items) do
+        local quality_suffix = "normal"
+        if item_data.quality then
+            if type(item_data.quality) == "table" and item_data.quality.name then
+                quality_suffix = string.lower(item_data.quality.name)
+            elseif type(item_data.quality) == "string" then
+                quality_suffix = string.lower(item_data.quality)
+            end
+        end
+        local key = item_data.equipment_name .. ":" .. quality_suffix
+        equipment_map[key] = item_data
+    end
+    
+    -- Find the equipment flow
+    local button_frame = equipment_toolbar["button_frame"]
+    if not button_frame or not button_frame.valid then
+        return
+    end
+    
+    local equipment_scroll = button_frame["equipment_scroll"]
+    if not equipment_scroll or not equipment_scroll.valid then
+        return
+    end
+    
+    local equipment_flow = equipment_scroll["equipment_flow"]
+    if not equipment_flow or not equipment_flow.valid then
+        return
+    end
+    
+    -- Track which buttons already exist
+    -- First, collect all existing buttons without modifying them
+    local existing_buttons = {}
+    local buttons_to_remove = {}
+    for _, child in pairs(equipment_flow.children) do
+        if child.type == "sprite-button" and child.tags then
+            local equipment_name = child.tags.equipment_name
+            local quality = child.tags.quality
+            local quality_suffix = "normal"
+            if quality then
+                if type(quality) == "table" and quality.name then
+                    quality_suffix = string.lower(quality.name)
+                elseif type(quality) == "string" then
+                    quality_suffix = string.lower(quality)
+                end
+            else
+                quality_suffix = "normal"
+            end
+            
+            local key = equipment_name .. ":" .. quality_suffix
+            existing_buttons[key] = child
+            
+            local item_data = equipment_map[key]
+            
+            if item_data then
+                -- Update existing button tooltip
+                local item_prototype = prototypes.item[item_data.item_name]
+                if item_prototype then
+                    local tooltip_text = item_prototype.localised_name or item_data.item_name
+                    if item_data.count > 1 then
+                        tooltip_text = {"", tooltip_text, " - ", item_data.count, "x"}
+                    end
+                    child.tooltip = tooltip_text
+                end
+            else
+                -- Item no longer in inventory, mark for removal
+                table.insert(buttons_to_remove, child)
+            end
+        end
+    end
+    
+    -- Remove buttons that are no longer needed (do this after iteration to avoid issues)
+    for _, button in ipairs(buttons_to_remove) do
+        if button.valid then
+            button.destroy()
+        end
+    end
+    
+    -- Verify equipment_flow is still valid after removing buttons
+    if not equipment_flow.valid then
+        return
+    end
+    
+    -- Add new buttons for items that don't have buttons yet
+    for _, item_data in ipairs(equipment_items) do
+        local quality_suffix = "normal"
+        if item_data.quality then
+            if type(item_data.quality) == "table" and item_data.quality.name then
+                quality_suffix = string.lower(item_data.quality.name)
+            elseif type(item_data.quality) == "string" then
+                quality_suffix = string.lower(item_data.quality)
+            end
+        end
+        local key = item_data.equipment_name .. ":" .. quality_suffix
+        
+        if not existing_buttons[key] then
+            -- This item doesn't have a button yet, create one
+            local item_prototype = prototypes.item[item_data.item_name]
+            if item_prototype then
+                -- Verify equipment_flow is still valid before adding
+                if not equipment_flow.valid then
+                    return
+                end
+                
+                local icon_sprite = "item/" .. item_data.item_name
+                local tooltip_text = item_prototype.localised_name or item_data.item_name
+                if item_data.count > 1 then
+                    tooltip_text = {"", tooltip_text, " - ", item_data.count, "x"}
+                end
+                
+                local button_name = equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME .. "_" .. item_data.equipment_name .. "_" .. quality_suffix
+                
+                local success, equipment_button = pcall(function()
+                    return equipment_flow.add{
+                        type = "sprite-button",
+                        name = button_name,
+                        sprite = icon_sprite,
+                        style = "slot_sized_button",
+                        tooltip = tooltip_text,
+                        enabled = true,
+                        tags = {
+                            equipment_name = item_data.equipment_name,
+                            item_name = item_data.item_name,
+                            inventory_index = item_data.index,
+                            quality = item_data.quality
+                        }
+                    }
+                end)
+                
+                if not success then
+                    -- If adding button failed, try recreating the toolbar
+                    equipment_grid_fill.get_or_create_fill_button(player)
+                    return
+                end
+            end
+        end
+    end
+end
+
+-- Remove the fill button and equipment toolbar
 function equipment_grid_fill.remove_fill_button(player)
     if not player or not player.valid then
         return
@@ -455,9 +834,43 @@ function equipment_grid_fill.remove_fill_button(player)
     if button and button.valid then
         button.destroy()
     end
+    
+    local equipment_toolbar = relative_gui[equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME]
+    if equipment_toolbar and equipment_toolbar.valid then
+        equipment_toolbar.destroy()
+    end
 end
 
--- Handle button click - fill equipment ghosts
+-- Find the item that places a given equipment (reverse lookup of place_as_equipment_result)
+function equipment_grid_fill.find_item_for_equipment(equipment_name, equipment_quality)
+    if not equipment_name then
+        return nil
+    end
+    
+    -- Search through all item prototypes to find one that places this equipment
+    for item_name, item_prototype in pairs(prototypes.item) do
+        if item_prototype and item_prototype.place_as_equipment_result then
+            local place_result = item_prototype.place_as_equipment_result
+            local result_equipment_name = nil
+            
+            -- Extract equipment name from place_result
+            if type(place_result) == "string" then
+                result_equipment_name = place_result
+            elseif place_result and place_result.name then
+                result_equipment_name = place_result.name
+            end
+            
+            -- Check if this item places the equipment we're looking for
+            if result_equipment_name == equipment_name then
+                return item_name
+            end
+        end
+    end
+    
+    return nil
+end
+
+-- Handle button click - fill equipment ghosts and remove marked equipment
 function equipment_grid_fill.on_fill_button_click(player)
     -- game.print("[EQUIP FILL CLICK] on_fill_button_click called")
     if not player or not player.valid then
@@ -474,16 +887,6 @@ function equipment_grid_fill.on_fill_button_click(player)
     end
     -- game.print("[EQUIP FILL CLICK] Found grid, inventory=" .. tostring(inventory ~= nil))
     
-    -- Get ghost equipment (validate on click)
-    -- game.print("[EQUIP FILL CLICK] Getting ghost equipment...")
-    local ghosts = equipment_grid_fill.get_ghost_equipment(grid)
-    -- game.print("[EQUIP FILL CLICK] Found " .. #ghosts .. " ghost equipment")
-    if #ghosts == 0 then
-        -- game.print("[EQUIP FILL CLICK] No ghost equipment found")
-        player.print("No ghost equipment found in grid")
-        return
-    end
-    
     -- Use the inventory from get_equipment_grid_context
     -- This should now be correctly found using itemstack_owner
     local target_inventory = inventory  -- From get_equipment_grid_context
@@ -495,12 +898,148 @@ function equipment_grid_fill.on_fill_button_click(player)
     end
     -- game.print("[EQUIP FILL CLICK] Found target inventory")
     
+    -- First, handle equipment marked for deconstruction or removal
+    -- Do this BEFORE filling ghosts
+    local removed_count = 0
+    
+    -- Create a list of equipment marked for removal
+    local equipment_to_remove = {}
+    for _, equipment in pairs(grid.equipment) do
+        if equipment and equipment.valid then
+            -- Skip ghosts - they're handled separately
+            local is_ghost = false
+            if equipment.prototype and equipment.prototype.type == "equipment-ghost" then
+                is_ghost = true
+            elseif equipment.name and (equipment.name:match("%-ghost$") or equipment.name == "equipment-ghost") then
+                is_ghost = true
+            end
+            
+            if not is_ghost then
+                -- Check if equipment is marked for removal
+                -- Equipment in grids use to_be_removed, not to_be_deconstructed
+                local is_marked = false
+                
+                local success_check, to_be_removed = pcall(function()
+                    return equipment.to_be_removed
+                end)
+                
+                if success_check and to_be_removed then
+                    is_marked = true
+                end
+                
+                -- Only add to removal list if actually marked
+                if is_marked then
+                    table.insert(equipment_to_remove, equipment)
+                end
+            end
+        end
+    end
+    
+    -- Remove marked equipment using grid.take() and add items back to inventory
+    -- IMPORTANT: After grid.take(), the equipment becomes invalid, so store name first
+    -- We need to check space and remove one at a time, re-checking after each removal
+    local failed_removals = {}
+    
+    for _, equipment in ipairs(equipment_to_remove) do
+        if equipment and equipment.valid then
+            local equipment_name = equipment.name
+            
+            -- Find the item that places this equipment to get the item name
+            local item_name = equipment_grid_fill.find_item_for_equipment(equipment_name)
+            if not item_name then
+                item_name = equipment_name
+            end
+            
+            -- Check if we can insert this item into inventory before removing
+            local item_prototype = prototypes.item[item_name]
+            if item_prototype then
+                -- Test if we can insert at least 1 of this item (equipment typically returns 1 item)
+                local test_insert = target_inventory.insert({name = item_name, count = 1})
+                if test_insert == 0 then
+                    -- Cannot insert - inventory is full, skip this equipment
+                    table.insert(failed_removals, {
+                        name = item_name,
+                        equipment = equipment
+                    })
+                    -- Skip to next equipment
+                    goto continue
+                end
+                
+                -- Remove the test item we just inserted
+                for i = 1, #target_inventory do
+                    local stack = target_inventory[i]
+                    if stack and stack.valid_for_read and stack.name == item_name then
+                        stack.count = stack.count - 1
+                        break
+                    end
+                end
+            end
+            
+            -- We verified we can insert, so now remove the equipment
+            local success_take, item_result = pcall(function()
+                return grid.take({equipment = equipment, by_player = player})
+            end)
+            
+            if success_take and item_result then
+                -- Successfully took the equipment (equipment is now invalid)
+                
+                -- Try to insert into inventory
+                local success_insert, inserted = pcall(function()
+                    return target_inventory.insert(item_result)
+                end)
+                
+                if success_insert and inserted and inserted > 0 then
+                    removed_count = removed_count + 1
+                else
+                    -- This shouldn't happen since we checked, but handle it anyway
+                    -- If it fails, we've already removed the equipment, so item is lost
+                    -- This is a safety check
+                    table.insert(failed_removals, {
+                        name = item_name,
+                        equipment = nil  -- Already removed, can't put back
+                    })
+                end
+            end
+            
+            ::continue::
+        end
+    end
+    
+    -- Notify user about items that can't be removed due to full inventory
+    if #failed_removals > 0 then
+        local failed_messages = {}
+        for _, failed in ipairs(failed_removals) do
+            table.insert(failed_messages, failed.name)
+        end
+        player.print("Warning: Could not remove " .. table.concat(failed_messages, ", ") .. " - inventory is full. Make space and try again.")
+    end
+    
+    -- Get ghost equipment (validate on click)
+    -- game.print("[EQUIP FILL CLICK] Getting ghost equipment...")
+    local ghosts = equipment_grid_fill.get_ghost_equipment(grid)
+    -- game.print("[EQUIP FILL CLICK] Found " .. #ghosts .. " ghost equipment")
+    if #ghosts == 0 then
+        -- game.print("[EQUIP FILL CLICK] No ghost equipment found")
+        if removed_count > 0 then
+            --player.print("Removed " .. removed_count .. " equipment item(s) and returned to inventory")
+            -- Refresh toolbar since items were added back to inventory
+            equipment_grid_fill.refresh_equipment_toolbar(player)
+        end
+        return
+    end
+    
     -- Find matching items (validate on click)
     -- game.print("[EQUIP FILL CLICK] Finding matching items...")
     local matches = equipment_grid_fill.find_matching_items(target_inventory, ghosts)
     if not matches or next(matches) == nil then
         -- game.print("[EQUIP FILL CLICK] No matching items found")
-        player.print("No matching equipment items found in inventory")
+        if removed_count > 0 then
+            --player.print("Removed " .. removed_count .. " equipment item(s). No matching equipment items found in inventory for ghosts.")
+            -- Refresh toolbar since items were added back to inventory
+            equipment_grid_fill.refresh_equipment_toolbar(player)
+        else
+            player.print("No matching equipment items found in inventory")
+        end
         return
     end
     -- game.print("[EQUIP FILL CLICK] Found matching items")
@@ -516,7 +1055,13 @@ function equipment_grid_fill.on_fill_button_click(player)
     
     if fillable_count == 0 then
         -- game.print("[EQUIP FILL CLICK] No ghosts can be filled")
-        player.print("No ghost equipment can be filled with available items")
+        if removed_count > 0 then
+            --player.print("Removed " .. removed_count .. " equipment item(s). No ghost equipment can be filled with available items.")
+            -- Refresh toolbar since items were added back to inventory
+            equipment_grid_fill.refresh_equipment_toolbar(player)
+        else
+            player.print("No ghost equipment can be filled with available items")
+        end
         return
     end
     
@@ -620,10 +1165,128 @@ function equipment_grid_fill.on_fill_button_click(player)
     end
     
     -- game.print("[EQUIP FILL CLICK] Finished filling. Total filled: " .. filled_count)
-    if filled_count > 0 then
-        player.print("Filled " .. filled_count .. " equipment ghost(s)")
-    else
-        player.print("Could not fill any equipment ghosts")
+    local messages = {}
+    if removed_count > 0 then
+        --table.insert(messages, "Removed " .. removed_count .. " equipment item(s)")
+    end
+    
+    if #messages > 0 then
+        player.print(table.concat(messages, ", "))
+    elseif removed_count == 0 then
+        --player.print("Could not fill any equipment ghosts")
+    end
+    
+    -- Refresh the equipment toolbar to update counts
+    equipment_grid_fill.refresh_equipment_toolbar(player)
+end
+
+-- Handle equipment item button click - put ghost equipment item in cursor for manual placement
+function equipment_grid_fill.on_equipment_item_click(player, button_name, tags)
+    if not player or not player.valid then
+        return
+    end
+    
+    -- Get equipment name and item name from tags
+    local equipment_name = tags and tags.equipment_name
+    local item_name = tags and tags.item_name
+    
+    if not equipment_name or not item_name then
+        player.print("Invalid equipment button data")
+        return
+    end
+    
+    -- Get quality from tags if present
+    local target_quality = nil
+    if tags and tags.quality then
+        if type(tags.quality) == "table" and tags.quality.name then
+            target_quality = tags.quality.name
+        elseif type(tags.quality) == "string" then
+            target_quality = tags.quality
+        end
+    end
+    
+    -- Use cursor_ghost to place a ghost of the equipment item
+    -- This allows placing ghosts directly without needing the item in inventory
+    
+    -- Clear cursor stack first if it has something (ghost takes priority but let's be safe)
+    local cursor_stack = player.cursor_stack
+    if cursor_stack and cursor_stack.valid and cursor_stack.valid_for_read then
+        cursor_stack.clear()
+    end
+    
+    -- Set the cursor ghost
+    local ghost_data = {name = item_name}
+    if target_quality and target_quality ~= "Normal" then
+        local quality_obj = game.qualities[target_quality]
+        if quality_obj then
+            ghost_data.quality = quality_obj
+        end
+    end
+    
+    pcall(function()
+        player.cursor_ghost = ghost_data
+    end)
+end
+
+-- Handle cargo pod button click
+function equipment_grid_fill.on_cargo_pod_button_click(player)
+    if not player or not player.valid then
+        return
+    end
+    
+    -- Get the current surface before closing GUI (in case it changes)
+    local current_surface = player.surface
+    
+    -- Close the equipment grid GUI
+    if player.opened then
+        player.opened = nil
+    end
+    
+    -- Wait a tick before showing menu to ensure GUI state is stable
+    -- Use pending_deployment mechanism for consistency
+    storage.pending_deployment = storage.pending_deployment or {}
+    
+    -- Check if player is on a platform surface - switch to planet and open map GUI
+    if current_surface and current_surface.platform then
+        -- Extract the planet name from the platform's space_location
+        local planet_name = nil
+        if current_surface.platform.space_location then
+            local location_str = tostring(current_surface.platform.space_location)
+            planet_name = location_str:match(": ([^%(]+) %(planet%)")
+        end
+        
+        if planet_name then
+            -- Get the planet surface
+            local planet_surface = game.get_surface(planet_name)
+            if planet_surface then
+                -- Open map view at 0,0 on the planet surface
+                local target_position = {x = 0, y = 0}
+                player.set_controller{
+                    type = defines.controllers.remote,
+                    surface = planet_surface,
+                    position = target_position
+                }
+
+                -- Store data needed for next tick
+                storage.pending_deployment[player.index] = {
+                    planet_surface = planet_surface,
+                    planet_name = planet_name
+                }
+                return
+            end
+        else
+            player.print("Vehicle Deployment is not possible while the platform is in transit")
+            return
+        end
+    end
+    
+    -- For non-platform surfaces, store pending deployment to show menu next tick
+    -- This ensures GUI state is stable
+    if current_surface then
+        storage.pending_deployment[player.index] = {
+            planet_surface = current_surface,
+            planet_name = current_surface.name
+        }
     end
 end
 

@@ -4,6 +4,7 @@ local deployment = require("scripts-sa.deployment")
 local vehicles_list = require("scripts-sa.vehicles-list")
 local platform_gui = require("scripts-sa.platform-gui")
 local equipment_grid_fill = require("scripts-sa.equipment-grid-fill")
+local api = require("scripts-sa.api")
 
 -- Debug logging function
 local function debug_log(message)
@@ -16,6 +17,8 @@ local function init_storage()
     storage.pending_deployments = storage.pending_deployments or {}
     storage.pending_pod_deployments = storage.pending_pod_deployments or {}
     storage.temp_deployment_data = storage.temp_deployment_data or {}
+    storage.pending_grid_open = storage.pending_grid_open or {}
+    storage.current_equipment_grid_vehicle = storage.current_equipment_grid_vehicle or nil
     debug_log("Space Age storage initialized")
 end
 
@@ -132,14 +135,59 @@ script.on_event(defines.events.on_gui_click, function(event)
     
     -- Check for equipment grid fill button click
     if element.name == equipment_grid_fill.BUTTON_NAME .. "_btn" then
-        game.print("[CONTROL] Equipment fill button clicked! element.name=" .. tostring(element.name))
         local player = game.get_player(event.player_index)
         if player and player.valid then
-            game.print("[CONTROL] Calling on_fill_button_click for player " .. player.name)
             equipment_grid_fill.on_fill_button_click(player)
-        else
-            game.print("[CONTROL] Player invalid or not found")
         end
+        return
+    end
+    
+    -- Check for equipment grid cargo pod button click
+    if element.name == equipment_grid_fill.CARGO_POD_BUTTON_NAME .. "_btn" then
+        local player = game.get_player(event.player_index)
+        if player and player.valid then
+            equipment_grid_fill.on_cargo_pod_button_click(player)
+        end
+        return
+    end
+    
+    -- Check for equipment item button clicks
+    if element.name and element.name:match("^" .. equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME .. "_") then
+        local player = game.get_player(event.player_index)
+        if player and player.valid and element.tags then
+            equipment_grid_fill.on_equipment_item_click(player, element.name, element.tags)
+        end
+        return
+    end
+    
+    -- Check for orbital deployment button in equipment grid GUI
+    if element.name == "equipment_grid_orbital_deploy_btn" then
+        local player = game.get_player(event.player_index)
+        if not player or not player.valid then return end
+        
+        -- Close the equipment grid GUI
+        if player.opened then
+            player.opened = nil
+        end
+        
+        -- Get the vehicle data
+        local vehicle = storage.current_equipment_grid_vehicle
+        if not vehicle then
+            player.print("Error: Vehicle data not found")
+            return
+        end
+        
+        -- Find vehicles for the current surface and reopen deployment menu
+        local map_gui = require("scripts-sa.map-gui")
+        local vehicles = map_gui.find_orbital_vehicles(player.surface)
+        if #vehicles == 0 then
+            player.print("No vehicles are deployable to this surface.")
+        else
+            map_gui.show_deployment_menu(player, vehicles)
+        end
+        
+        -- Clear the stored vehicle data
+        storage.current_equipment_grid_vehicle = nil
         return
     end
     
@@ -300,7 +348,21 @@ script.on_event(defines.events.on_gui_closed, function(event)
     if player.gui.screen["spidertron_deployment_frame"] then
         player.gui.screen["spidertron_deployment_frame"].destroy()
     end
+    
+    -- Clean up equipment grid orbital deploy button
+    local relative_gui = player.gui.relative
+    if relative_gui then
+        local button_frame = relative_gui["equipment_grid_orbital_deploy"]
+        if button_frame and button_frame.valid then
+            button_frame.destroy()
+        end
+    end
+    
+    -- Clear stored vehicle data
+    storage.current_equipment_grid_vehicle = nil
 end)
+
+
 
 -- Helper function to initialize scout-o-tron equipment grid
 -- local function initialize_scout_grid(stack)
@@ -326,7 +388,6 @@ script.on_event(defines.events.on_gui_opened, function(event)
     local player = game.get_player(event.player_index)
     if not player or not player.valid then return end
     
-    game.print("[CONTROL] on_gui_opened event fired")
     
     -- Try to create/update platform deploy button immediately
     -- The periodic check (every 1 second) will also try if this fails
@@ -334,26 +395,124 @@ script.on_event(defines.events.on_gui_opened, function(event)
     
     -- Create equipment grid fill button immediately
     equipment_grid_fill.get_or_create_fill_button(player)
+    
+    -- Check if opened is an equipment grid for a vehicle
+    local opened = player.opened
+    if opened and opened.valid then
+        -- Check if it's an equipment grid
+        local success, has_equipment = pcall(function()
+            return opened.equipment ~= nil
+        end)
+        
+        if success and has_equipment then
+            -- It's an equipment grid - try to find the vehicle data
+            local grid = opened
+            local success_owner, itemstack_owner = pcall(function()
+                return grid.itemstack_owner
+            end)
+            
+            if success_owner and itemstack_owner then
+                -- Check if it's a vehicle item
+                if vehicles_list.is_vehicle(itemstack_owner.name) then
+                    -- Try to find the vehicle in storage.spidertrons
+                    if storage.spidertrons then
+                        for _, vehicle in ipairs(storage.spidertrons) do
+                            if vehicle.vehicle_name == itemstack_owner.name then
+                                -- Store vehicle data for the orbital deployment button
+                                storage.current_equipment_grid_vehicle = vehicle
+                                
+                                -- Add orbital deployment button to the equipment grid GUI
+                                -- Equipment grids use relative GUI
+                                local relative_gui = player.gui.relative
+                                if relative_gui then
+                                    -- Check if button already exists
+                                    local button_frame = relative_gui["equipment_grid_orbital_deploy"]
+                                    if not button_frame or not button_frame.valid then
+                                        -- Try to find the equipment grid GUI type
+                                        local gui_type = nil
+                                        if defines.relative_gui_type.equipment_grid_gui then
+                                            gui_type = defines.relative_gui_type.equipment_grid_gui
+                                        end
+                                        
+                                        if gui_type then
+                                            local anchor = {
+                                                gui = gui_type,
+                                                position = defines.relative_gui_position.bottom
+                                            }
+                                            
+                                            local frame_config = {
+                                                type = "frame",
+                                                name = "equipment_grid_orbital_deploy",
+                                                style = "frame"
+                                            }
+                                            
+                                            local success_frame, toolbar_frame = pcall(function()
+                                                return relative_gui.add(frame_config)
+                                            end)
+                                            
+                                            if not success_frame then
+                                                -- Try without anchor
+                                                frame_config.anchor = anchor
+                                                success_frame, toolbar_frame = pcall(function()
+                                                    return relative_gui.add(frame_config)
+                                                end)
+                                            end
+                                            
+                                            if success_frame and toolbar_frame then
+                                                toolbar_frame.style.horizontally_stretchable = false
+                                                toolbar_frame.style.vertically_stretchable = false
+                                                toolbar_frame.style.top_padding = 3
+                                                toolbar_frame.style.bottom_padding = 6
+                                                toolbar_frame.style.left_padding = 6
+                                                toolbar_frame.style.right_padding = 6
+                                                
+                                                local button_flow = toolbar_frame.add{
+                                                    type = "flow",
+                                                    name = "button_flow",
+                                                    direction = "horizontal"
+                                                }
+                                                button_flow.style.horizontal_align = "right"
+                                                
+                                                local orbital_deploy_button = button_flow.add{
+                                                    type = "button",
+                                                    name = "equipment_grid_orbital_deploy_btn",
+                                                    caption = "Orbital Deployment",
+                                                    style = "confirm_button"
+                                                }
+                                                orbital_deploy_button.tooltip = "Continue orbital deployment and reopen deployment menu"
+                                            end
+                                        end
+                                    end
+                                end
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
 end)
 
 script.on_event(defines.events.on_tick, function(event)
-    if not storage.pending_deployment then return end
-    
-    for player_index, data in pairs(storage.pending_deployment) do
-        if not data.processed then
-            data.processed = true
-            -- Skip this tick, process next tick
-        else
-            local player = game.get_player(player_index)
-            if player then
-                local vehicles = map_gui.find_orbital_vehicles(data.planet_surface)
-                if #vehicles == 0 then
-                    player.print("No vehicles are deployable to " .. data.planet_name .. ".")
-                else
-                    map_gui.show_deployment_menu(player, vehicles)
+    -- Handle pending deployments
+    if storage.pending_deployment then
+        for player_index, data in pairs(storage.pending_deployment) do
+            if not data.processed then
+                data.processed = true
+                -- Skip this tick, process next tick
+            else
+                local player = game.get_player(player_index)
+                if player then
+                    local vehicles = map_gui.find_orbital_vehicles(data.planet_surface)
+                    if #vehicles == 0 then
+                        player.print({"", "No vehicles are deployable to ", data.planet_name, "."})
+                    else
+                        map_gui.show_deployment_menu(player, vehicles)
+                    end
                 end
+                storage.pending_deployment[player_index] = nil
             end
-            storage.pending_deployment[player_index] = nil
         end
     end
 end)
@@ -587,4 +746,393 @@ commands.add_command("debug_hub_inventory", "Debug hub inventory items", functio
             end
         end
     end
+end)
+
+-- Temporary debug command to check planet information
+commands.add_command("debug_planet_info", "Debug planet information from current platform", function(command)
+    local player = game.get_player(command.player_index)
+    if not player then 
+        return 
+    end
+    
+    player.print("=== Planet Debug Info ===")
+    
+    -- Check player's current surface
+    local player_surface = player.surface
+    if player_surface then
+        player.print("Player surface: " .. tostring(player_surface.name))
+        
+        -- Check if it's a platform surface
+        if player_surface.platform then
+            player.print("Surface is a platform")
+            
+            -- Check space_location
+            local space_location = player_surface.platform.space_location
+            if space_location then
+                player.print("space_location: " .. tostring(space_location))
+                
+                -- Try to get planet from platform
+                local planet_success, planet = pcall(function()
+                    return player_surface.platform.planet
+                end)
+                if planet_success and planet then
+                    player.print("platform.planet found: " .. tostring(planet))
+                    
+                    -- Try to get planet name
+                    local name_success, planet_name = pcall(function()
+                        return planet.name
+                    end)
+                    if name_success and planet_name then
+                        player.print("planet.name: " .. tostring(planet_name))
+                    end
+                    
+                    -- Try to get associated_surfaces
+                    local surfaces_success, associated_surfaces = pcall(function()
+                        return planet.associated_surfaces
+                    end)
+                    if surfaces_success and associated_surfaces then
+                        player.print("planet.associated_surfaces count: " .. tostring(#associated_surfaces))
+                        for i, surface in ipairs(associated_surfaces) do
+                            local surface_name = "unknown"
+                            local name_success, name = pcall(function()
+                                return surface.name
+                            end)
+                            if name_success and name then
+                                surface_name = name
+                            end
+                            player.print("  [" .. i .. "] " .. surface_name)
+                            
+                            -- Check if this is arrival
+                            if surface_name:lower():find("arrival") then
+                                player.print("    ^^^ This is ARRIVAL!")
+                            end
+                        end
+                    else
+                        player.print("Could not access planet.associated_surfaces")
+                    end
+                else
+                    player.print("platform.planet not found")
+                end
+                
+                -- Try to get planet from space_location
+                local space_planet_success, space_planet = pcall(function()
+                    return space_location.planet
+                end)
+                if space_planet_success and space_planet then
+                    player.print("space_location.planet found: " .. tostring(space_planet))
+                end
+                
+                -- Try space_location.name
+                local loc_name_success, loc_name = pcall(function()
+                    return space_location.name
+                end)
+                if loc_name_success and loc_name then
+                    player.print("space_location.name: " .. tostring(loc_name))
+                    
+                    -- Try to find planet in game.planets
+                    local planet_lookup = game.planets[loc_name]
+                    if planet_lookup then
+                        player.print("Found planet in game.planets[" .. loc_name .. "]")
+                        
+                        -- Try associated_surfaces
+                        local surfaces_success2, associated_surfaces2 = pcall(function()
+                            return planet_lookup.associated_surfaces
+                        end)
+                        if surfaces_success2 and associated_surfaces2 then
+                            player.print("game.planets[" .. loc_name .. "].associated_surfaces count: " .. tostring(#associated_surfaces2))
+                            for i, surface in ipairs(associated_surfaces2) do
+                                local surface_name = "unknown"
+                                local name_success, name = pcall(function()
+                                    return surface.name
+                                end)
+                                if name_success and name then
+                                    surface_name = name
+                                end
+                                player.print("  [" .. i .. "] " .. surface_name)
+                                
+                                -- Check if this is arrival
+                                if surface_name:lower():find("arrival") then
+                                    player.print("    ^^^ This is ARRIVAL!")
+                                end
+                            end
+                        end
+                    end
+                end
+            else
+                player.print("No space_location found")
+            end
+        else
+            player.print("Surface is not a platform")
+        end
+    else
+        player.print("No player surface found")
+    end
+    
+    player.print("=== End Planet Debug ===")
+end)
+
+-- Command to specifically check for arrival
+commands.add_command("debug_find_arrival", "Find arrival planet and surfaces", function(command)
+    local player = game.get_player(command.player_index)
+    if not player then 
+        return 
+    end
+    
+    player.print("=== Searching for Arrival ===")
+    
+    -- First, check current platform if on one
+    local player_surface = player.surface
+    if player_surface and player_surface.platform then
+        player.print("Current platform: " .. tostring(player_surface.name))
+        
+        local space_location = player_surface.platform.space_location
+        if space_location then
+            player.print("space_location: " .. tostring(space_location))
+            
+            -- Try to get planet from space_location.name
+            local loc_name_success, loc_name = pcall(function()
+                return space_location.name
+            end)
+            if loc_name_success and loc_name then
+                player.print("space_location.name: " .. tostring(loc_name))
+                
+                -- Get planet from game.planets
+                local planet = game.planets[loc_name]
+                if planet then
+                    player.print("Found planet: " .. tostring(planet))
+                    
+                    -- Check associated_surfaces for arrival
+                    local surfaces_success, associated_surfaces = pcall(function()
+                        return planet.associated_surfaces
+                    end)
+                    if surfaces_success and associated_surfaces then
+                        player.print("associated_surfaces count: " .. tostring(#associated_surfaces))
+                        for i, surface in ipairs(associated_surfaces) do
+                            local surface_name = "unknown"
+                            local localised_name_str = nil
+                            
+                            -- Get name
+                            local name_success, name = pcall(function()
+                                return surface.name
+                            end)
+                            if name_success and name then
+                                surface_name = name
+                            end
+                            
+                            -- Get localised_name
+                            local localised_success, localised_name = pcall(function()
+                                return surface.localised_name
+                            end)
+                            if localised_success and localised_name then
+                                localised_name_str = game.get_localised_string(localised_name)
+                            end
+                            
+                            local is_arrival = false
+                            if surface_name:lower():find("arrival") or (localised_name_str and localised_name_str:lower():find("arrival")) then
+                                is_arrival = true
+                            end
+                            
+                            if is_arrival then
+                                player.print("  [" .. i .. "] " .. surface_name .. " (localised: " .. tostring(localised_name_str) .. ") <--- ARRIVAL FOUND!")
+                            else
+                                player.print("  [" .. i .. "] " .. surface_name .. " (localised: " .. tostring(localised_name_str) .. ")")
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    player.print("--- Searching all planets for arrival ---")
+    
+    -- Search through all planets in game.planets
+    local found_arrival = false
+    for planet_name, planet in pairs(game.planets) do
+        local planet_name_str = tostring(planet_name)
+        
+        -- Check if planet name contains arrival
+        if planet_name_str:lower():find("arrival") then
+            player.print("Found planet with 'arrival' in name: " .. planet_name_str)
+            found_arrival = true
+            
+            -- Get associated_surfaces
+            local surfaces_success, associated_surfaces = pcall(function()
+                return planet.associated_surfaces
+            end)
+            if surfaces_success and associated_surfaces then
+                player.print("  associated_surfaces count: " .. tostring(#associated_surfaces))
+                for i, surface in ipairs(associated_surfaces) do
+                    local surface_name = "unknown"
+                    local name_success, name = pcall(function()
+                        return surface.name
+                    end)
+                    if name_success and name then
+                        surface_name = name
+                        player.print("    [" .. i .. "] " .. surface_name)
+                    end
+                end
+            end
+        else
+            -- Check associated_surfaces for arrival even if planet name doesn't have it
+            local surfaces_success, associated_surfaces = pcall(function()
+                return planet.associated_surfaces
+            end)
+            if surfaces_success and associated_surfaces then
+                for i, surface in ipairs(associated_surfaces) do
+                    local surface_name = "unknown"
+                    local name_success, name = pcall(function()
+                        return surface.name
+                    end)
+                    if name_success and name then
+                        surface_name = name
+                        if surface_name:lower():find("arrival") then
+                            player.print("Found 'arrival' in planet '" .. planet_name_str .. "' associated_surfaces:")
+                            player.print("  Planet: " .. planet_name_str)
+                            player.print("  Surface [" .. i .. "]: " .. surface_name .. " <--- ARRIVAL!")
+                            found_arrival = true
+                            
+                            -- Show all surfaces for this planet
+                            player.print("  All surfaces for this planet:")
+                            for j, surf in ipairs(associated_surfaces) do
+                                local surf_name = "unknown"
+                                local surf_name_success, surf_name_result = pcall(function()
+                                    return surf.name
+                                end)
+                                if surf_name_success and surf_name_result then
+                                    surf_name = surf_name_result
+                                end
+                                player.print("    [" .. j .. "] " .. surf_name)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    -- Also search all surfaces directly
+    player.print("--- Searching all surfaces for arrival ---")
+    for _, surface in pairs(game.surfaces) do
+        local surface_name = surface.name
+        if surface_name:lower():find("arrival") then
+            player.print("Found surface with 'arrival': " .. surface_name)
+            found_arrival = true
+            
+            -- Check if this surface has a planet property
+            local planet_success, planet = pcall(function()
+                return surface.planet
+            end)
+            if planet_success and planet then
+                player.print("  Surface belongs to planet: " .. tostring(planet))
+            end
+        end
+    end
+    
+    if not found_arrival then
+        player.print("No 'arrival' found in any planets or surfaces")
+    end
+    
+    player.print("=== End Arrival Search ===")
+end)
+
+-- Command to check nauvis localised name
+commands.add_command("debug_nauvis_localised", "Check nauvis planet localised name", function(command)
+    local player = game.get_player(command.player_index)
+    if not player then 
+        return 
+    end
+    
+    player.print("=== Checking Nauvis Localised Name ===")
+    
+    -- First, check if player is on a platform and get space_location
+    local player_surface = player.surface
+    if player_surface and player_surface.platform then
+        local space_location = player_surface.platform.space_location
+        if space_location then
+            player.print("space_location found: " .. tostring(space_location))
+            
+            -- Check space_location.localised_name (LuaSpaceLocationPrototype has this)
+            local space_localised_success, space_localised = pcall(function()
+                return space_location.localised_name
+            end)
+            if space_localised_success and space_localised then
+                player.print("space_location.localised_name (raw): " .. tostring(space_localised))
+                
+                local string_success, localised_string = pcall(function()
+                    return game.get_localised_string(space_localised)
+                end)
+                if string_success and localised_string then
+                    player.print("space_location.localised_name (string): " .. tostring(localised_string))
+                else
+                    player.print("Could not convert space_location.localised_name to string")
+                end
+            else
+                player.print("Could not access space_location.localised_name")
+            end
+            
+            -- Also check space_location.name
+            local space_name_success, space_name = pcall(function()
+                return space_location.name
+            end)
+            if space_name_success and space_name then
+                player.print("space_location.name: " .. tostring(space_name))
+            end
+        end
+    end
+    
+    -- Get nauvis planet
+    local nauvis_planet = game.planets["nauvis"]
+    if nauvis_planet then
+        player.print("Found nauvis planet: " .. tostring(nauvis_planet))
+        
+        -- Get planet.name
+        local name_success, planet_name = pcall(function()
+            return nauvis_planet.name
+        end)
+        if name_success and planet_name then
+            player.print("planet.name: " .. tostring(planet_name))
+        end
+        
+        player.print("Note: LuaPlanet does not have localised_name property")
+        
+        -- Also check associated_surfaces
+        local surfaces_success, associated_surfaces = pcall(function()
+            return nauvis_planet.associated_surfaces
+        end)
+        if surfaces_success and associated_surfaces then
+            player.print("associated_surfaces count: " .. tostring(#associated_surfaces))
+            for i, surface in ipairs(associated_surfaces) do
+                local surface_name = "unknown"
+                local surface_localised = nil
+                
+                local name_success2, name2 = pcall(function()
+                    return surface.name
+                end)
+                if name_success2 and name2 then
+                    surface_name = name2
+                end
+                
+                local localised_success2, localised2 = pcall(function()
+                    return surface.localised_name
+                end)
+                if localised_success2 and localised2 then
+                    local string_success2, localised_string2 = pcall(function()
+                        return game.get_localised_string(localised2)
+                    end)
+                    if string_success2 and localised_string2 then
+                        surface_localised = localised_string2
+                    end
+                end
+                
+                player.print("  [" .. i .. "] name: " .. surface_name .. ", localised: " .. tostring(surface_localised))
+            end
+        else
+            player.print("Could not access associated_surfaces")
+        end
+    else
+        player.print("Could not find nauvis planet in game.planets")
+    end
+    
+    player.print("=== End Nauvis Check ===")
 end)

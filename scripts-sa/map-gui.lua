@@ -288,10 +288,59 @@ function map_gui.show_deployment_menu(player, vehicles)
         style = "frame_action_button"
     }
     
+    -- Get planet name for display (try to get localized name from platform)
+    local planet_display_name = nil
+    
+    -- Check if we have pending deployment data with planet info
+    if storage.pending_deployment and storage.pending_deployment[player.index] then
+        local deployment_data = storage.pending_deployment[player.index]
+        if deployment_data.planet_name then
+            planet_display_name = deployment_data.planet_name  -- Can be LocalisedString or string
+        end
+    end
+    
+    -- If we don't have it from pending deployment, try to get from player's current surface
+    if not planet_display_name then
+        -- Check if player is on a platform surface
+        if player.surface and player.surface.platform then
+            local space_location = player.surface.platform.space_location
+            if space_location then
+                local space_localised_success, space_localised = pcall(function()
+                    return space_location.localised_name
+                end)
+                if space_localised_success and space_localised then
+                    planet_display_name = space_localised
+                else
+                    -- Fallback to space_location.name
+                    local space_name_success, space_name = pcall(function()
+                        return space_location.name
+                    end)
+                    if space_name_success and space_name then
+                        planet_display_name = space_name:gsub("^%l", string.upper)
+                    end
+                end
+            end
+        end
+        
+        -- Final fallback to player surface name
+        if not planet_display_name then
+            planet_display_name = player.surface.name:gsub("^%l", string.upper)
+        end
+    end
+    
     -- Add title
+    local caption_text = nil
+    if type(planet_display_name) == "table" then
+        -- It's a LocalisedString, combine with text
+        caption_text = {"", "Deploy from orbit above ", planet_display_name}
+    else
+        -- It's a string
+        caption_text = "Deploy from orbit above " .. planet_display_name
+    end
+    
     frame.add{
         type = "label",
-        caption = "Deploy from orbit above " .. player.surface.name:gsub("^%l", string.upper),
+        caption = caption_text,
         style = "caption_label"
     }
     
@@ -397,6 +446,26 @@ function map_gui.show_deployment_menu(player, vehicles)
         }
         button_flow.style.horizontal_align = "right"
         
+        -- Check if vehicle has equipment grid and TFMG is active
+        local has_equipment_grid = false
+        if api and api.is_tfmg_active() then
+            local entity_prototype = prototypes.entity[vehicle.entity_name]
+            if entity_prototype and entity_prototype.grid_prototype then
+                has_equipment_grid = true
+            end
+        end
+        
+        -- Add edit equipment grid button if vehicle has equipment grid
+        if has_equipment_grid then
+            local edit_grid_button = button_flow.add{
+                type = "sprite-button",
+                name = "edit_equipment_grid_" .. i,
+                sprite = "utility/empty_armor_slot",
+                tooltip = "Edit Equipment Grid"
+            }
+            edit_grid_button.style.size = 28
+        end
+        
         -- Check if in map view (chart or zoomed-in chart)
         local in_map_view = player.render_mode == defines.render_mode.chart or 
                            player.render_mode == defines.render_mode.chart_zoomed_in
@@ -457,7 +526,6 @@ end
 
 function map_gui.list_compatible_items_in_inventory(inventory, compatible_items_list, available_items)
     if not inventory then 
-        game.print("inventory was nil")
         return {}
     end
     local match_list = {}
@@ -1040,8 +1108,8 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     end
     tabbed_pane.add_tab(utilities_tab, utilities_content)
     
-    -- Tab 2: Ammo (shown if vehicle has guns)
-    if has_guns then
+    -- Tab 3: Ammo (shown if vehicle has guns AND compatible ammo is available)
+    if has_guns and #ammo_list > 0 then
         local ammo_tab = tabbed_pane.add{
             type = "tab",
             name = "ammo_tab",
@@ -1080,7 +1148,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         tabbed_pane.add_tab(ammo_tab, ammo_content)
     end
     
-    -- Tab 3: Fuel (shown if vehicle needs fuel)
+    -- Tab 4: Fuel (shown if vehicle needs fuel)
     if needs_fuel then
         local fuel_tab = tabbed_pane.add{
             type = "tab",
@@ -1119,8 +1187,8 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         end
         tabbed_pane.add_tab(fuel_tab, fuel_content)
     end
-
-    -- Tab 4: Equipment (shown only if vehicle has equipment grid AND TFMG is installed)
+    
+    -- Tab 5: Equipment (shown last if vehicle has equipment grid AND TFMG is installed)
     if has_equipment and api.is_tfmg_active() then
         local equipment_tab = tabbed_pane.add{
             type = "tab",
@@ -1141,22 +1209,126 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         }
         equipment_scroll_pane.style.maximal_height = 300
         equipment_scroll_pane.style.minimal_width = 500
-        if #equipment_list > 0 then
-            local equipment_table = equipment_scroll_pane.add{
-                type = "table",
-                name = "equipment_table",
-                column_count = 2,
-                style = "table"
-            }
-            for _, item in ipairs(equipment_list) do
-                add_item_entry(equipment_table, item, available_items[item.name])
+        
+        -- Get the vehicle stack and grid to list equipment
+        local vehicle_stack = nil
+        local grid = nil
+        if vehicle_data.hub and vehicle_data.hub.valid then
+            local inv_type = vehicle_data.inv_type or defines.inventory.chest
+            local hub_inventory = vehicle_data.hub.get_inventory(inv_type)
+            if hub_inventory then
+                vehicle_stack = hub_inventory[vehicle_data.inventory_slot]
+                if vehicle_stack and vehicle_stack.valid_for_read then
+                    grid = vehicle_stack.grid
+                    if not grid then
+                        local success, created_grid = pcall(function()
+                            return vehicle_stack.create_grid()
+                        end)
+                        if success and created_grid then
+                            grid = created_grid
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Store grid reference for button click
+        if grid and grid.valid then
+            storage.temp_deployment_data.equipment_grid = grid
+            storage.temp_deployment_data.equipment_vehicle_stack = vehicle_stack
+        end
+        
+        -- Create equipment list - count equipment by name
+        local equipment_counts = {}
+        if grid and grid.valid then
+            for _, equipment in pairs(grid.equipment) do
+                if equipment and equipment.valid then
+                    local equipment_name = equipment.name
+                    if not equipment_counts[equipment_name] then
+                        local equipment_prototype = equipment.prototype
+                        equipment_counts[equipment_name] = {
+                            count = 0,
+                            localised_name = equipment_prototype and equipment_prototype.localised_name or equipment_name
+                        }
+                    end
+                    equipment_counts[equipment_name].count = equipment_counts[equipment_name].count + 1
+                end
+            end
+        end
+        
+        -- Create equipment list display
+        local equipment_list_flow = equipment_scroll_pane.add{
+            type = "flow",
+            name = "equipment_list_flow",
+            direction = "vertical"
+        }
+        equipment_list_flow.style.top_padding = 10
+        equipment_list_flow.style.bottom_padding = 10
+        equipment_list_flow.style.left_padding = 10
+        equipment_list_flow.style.right_padding = 10
+        
+        if next(equipment_counts) then
+            -- Sort equipment by name for consistent display
+            local sorted_equipment = {}
+            for name, data in pairs(equipment_counts) do
+                table.insert(sorted_equipment, {name = name, data = data})
+            end
+            table.sort(sorted_equipment, function(a, b)
+                -- Convert localised_name to string for comparison (it might be a LocalisedString table)
+                local name_a = type(a.data.localised_name) == "string" and a.data.localised_name or tostring(a.data.localised_name)
+                local name_b = type(b.data.localised_name) == "string" and b.data.localised_name or tostring(b.data.localised_name)
+                return name_a < name_b
+            end)
+            
+            -- Display each equipment with count
+            for _, eq in ipairs(sorted_equipment) do
+                -- Handle LocalisedString properly
+                local caption
+                if type(eq.data.localised_name) == "string" then
+                    caption = eq.data.localised_name .. " x" .. eq.data.count
+                else
+                    -- It's a LocalisedString, use table concatenation
+                    caption = {"", eq.data.localised_name, " x", eq.data.count}
+                end
+                
+                local equipment_label = equipment_list_flow.add{
+                    type = "label",
+                    caption = caption
+                }
+                equipment_label.style.top_padding = 2
+                equipment_label.style.bottom_padding = 2
             end
         else
-            equipment_scroll_pane.add{
+            -- No equipment installed
+            local no_equipment_label = equipment_list_flow.add{
                 type = "label",
-                caption = "No equipment items available"
-            }.style.font_color = {r=0.5, g=0.5, b=0.5}
+                caption = "No equipment installed",
+                style = "caption_label"
+            }
+            no_equipment_label.style.font_color = {r=0.7, g=0.7, b=0.7}
         end
+        
+        -- Add button to open equipment grid GUI
+        local button_flow = equipment_scroll_pane.add{
+            type = "flow",
+            name = "equipment_button_flow",
+            direction = "horizontal"
+        }
+        button_flow.style.horizontally_stretchable = true
+        button_flow.style.horizontal_align = "center"
+        button_flow.style.top_padding = 10
+        button_flow.style.bottom_padding = 10
+        
+        local open_grid_button = button_flow.add{
+            type = "button",
+            name = "open_equipment_grid_btn",
+            caption = "Manage Equipment Grid",
+            style = "confirm_button"
+        }
+        open_grid_button.style.minimal_width = 200
+        open_grid_button.style.minimal_height = 40
+        open_grid_button.tooltip = "Open the vehicle's equipment grid to manage equipment"
+        
         tabbed_pane.add_tab(equipment_tab, equipment_content)
     end
     
@@ -1477,6 +1649,90 @@ function map_gui.on_gui_click(event)
         return
     end
 
+    -- Handle equipment grid button click
+    if element.name == "open_equipment_grid_btn" then
+        -- Get the deployment data
+        local deployment_data = storage.temp_deployment_data
+        if not deployment_data then
+            player.print("Error: No deployment data found")
+            return
+        end
+        
+        local vehicle_data = deployment_data.vehicle
+        if not vehicle_data then
+            player.print("Error: No vehicle data found")
+            return
+        end
+        
+        if not vehicle_data.hub or not vehicle_data.hub.valid then
+            player.print("Error: Hub is invalid")
+            return
+        end
+        
+        -- Get the vehicle stack from the hub inventory using the correct inventory type
+        local inv_type = vehicle_data.inv_type or defines.inventory.chest
+        local hub_inventory = vehicle_data.hub.get_inventory(inv_type)
+        if not hub_inventory then
+            player.print("Error: Could not get hub inventory")
+            return
+        end
+        
+        local inventory_slot = vehicle_data.inventory_slot
+        if not inventory_slot then
+            player.print("Error: No inventory slot specified")
+            return
+        end
+        
+        local vehicle_stack = hub_inventory[inventory_slot]
+        if not vehicle_stack then
+            player.print("Error: Vehicle stack is nil")
+            return
+        end
+        if not vehicle_stack.valid_for_read then
+            player.print("Error: Vehicle stack is not readable")
+            return
+        end
+        
+        -- Close the extras menu first
+        if player.gui.screen["spidertron_extras_frame"] then
+            player.gui.screen["spidertron_extras_frame"].destroy()
+        end
+        
+        -- Get or create the equipment grid (without switching surfaces)
+        local grid = vehicle_stack.grid
+        if not grid then
+            -- Create grid if it doesn't exist
+            local success, created_grid = pcall(function()
+                return vehicle_stack.create_grid()
+            end)
+            if success and created_grid then
+                grid = created_grid
+            else
+                player.print("Error: Failed to create equipment grid")
+                return
+            end
+        end
+        
+        -- Verify grid is valid before opening
+        if not grid or not grid.valid then
+            player.print("Error: Grid is invalid")
+            return
+        end
+        
+        -- Open the equipment grid GUI (try opening grid directly)
+        player.opened = grid
+        
+        -- Check what player.opened actually is
+        local opened = player.opened
+        
+        -- If opening grid directly didn't work, try opening the item stack instead
+        if not opened or opened ~= grid then
+            player.opened = vehicle_stack
+        end
+        
+        return
+    end
+
     -- Handle extras menu clicks
     if element.name == "close_extras_menu_btn" or 
        element.name == "skip_extras_btn" or
@@ -1485,6 +1741,75 @@ function map_gui.on_gui_click(event)
         return
     end
 
+    -- Edit equipment grid button
+    local edit_grid_index_str = string.match(element.name, "^edit_equipment_grid_(%d+)$")
+    if edit_grid_index_str then
+        local index = tonumber(edit_grid_index_str)
+        if storage.spidertrons and storage.spidertrons[index] then
+            local vehicle = storage.spidertrons[index]
+            
+            -- Store vehicle data for reopening deployment menu later
+            storage.current_equipment_grid_vehicle = vehicle
+            
+            -- Get the vehicle stack from the hub inventory
+            local hub = vehicle.hub
+            if not hub or not hub.valid then
+                return
+            end
+            
+            local inv_type = vehicle.inv_type or defines.inventory.chest
+            local hub_inventory = hub.get_inventory(inv_type)
+            if not hub_inventory then
+                return
+            end
+            
+            local vehicle_stack = hub_inventory[vehicle.inventory_slot]
+            if not vehicle_stack then
+                return
+            end
+            if not vehicle_stack.valid_for_read then
+                return
+            end
+            
+            -- Close the deployment menu first
+            if player.gui.screen["spidertron_deployment_frame"] then
+                player.gui.screen["spidertron_deployment_frame"].destroy()
+            end
+            
+            -- Get or create the equipment grid
+            local grid = vehicle_stack.grid
+            if not grid then
+                local success, created_grid = pcall(function()
+                    return vehicle_stack.create_grid()
+                end)
+                if success and created_grid then
+                    grid = created_grid
+                else
+                    player.print("Error: Failed to create equipment grid")
+                    return
+                end
+            end
+            
+            -- Verify grid is valid before opening
+            if not grid or not grid.valid then
+                player.print("Error: Grid is invalid")
+                return
+            end
+            
+            -- Open the equipment grid GUI
+            player.opened = grid
+            
+            -- Check what player.opened actually is
+            local opened = player.opened
+            
+            -- If opening grid directly didn't work, try opening the item stack instead
+            if not opened or opened ~= grid then
+                player.opened = vehicle_stack
+            end
+        end
+        return
+    end
+    
     -- Deploy to target location button
     local target_index_str = string.match(element.name, "^deploy_target_(%d+)$")
     if target_index_str then

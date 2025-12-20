@@ -1,23 +1,40 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.9.4
-Date: 2025-12-19
+Date: 2025-12-20
   Features:
-    - Equipment grid fill button
+    - Remote Equipment grid management
       - Added button to automatically fill equipment grid ghosts from inventory when viewing vehicle equipment grids
       - Button appears when opening equipment grids for vehicles
       - Matches ghost equipment with items in inventory and fills them automatically
     - Platform deploy button
-      - Added deploy button that appears when opening platform hub GUI
+      - Added deploy button that appears when opening platform hub GUI (inspired by TFMG's original deploy button)
       - Allows direct deployment to the planet the platform is orbiting
       - Button only shows when platform is stopped above a planet (not in transit)
-  Improvements:
-    - Enhanced ghost equipment handling during deployment
-      - Improved detection of ghost equipment in vehicle grids
-      - Automatically attempts to replace ghost equipment with real equipment from platform inventory before deployment
-      - Better quality matching for ghost equipment replacement
-    - Improved inventory context detection for equipment grids
-      - Better logic to find the correct inventory containing vehicle items when using equipment grid fill
-      - Supports vehicles in player inventory, entity inventories, and cursor stack
+      - Shows localized planet name
+    - Equipment tab in deployment extras menu
+      - Added Equipment tab to the deployment extras menu (shown when vehicle has equipment grid and TFMG is active)
+      - Displays list of installed equipment with counts (e.g., "Solar Panel x2")
+      - Equipment list is sorted alphabetically for easy reading
+      - Shows "No equipment installed" message when grid is empty
+      - Includes "Manage Equipment Grid" button to open the full equipment grid GUI for management
+      - Equipment tab appears last in the tab order (after Utilities, Ammo, and Fuel)
+    - Equipment grid GUI
+      - Added cargo pod button to equipment grid toolbar
+        - Opens orbital deployment menu directly from equipment grid GUI
+        - Button appears alongside the equipment fill button
+        - Automatically switches to planet surface when viewing from platform
+      - Added equipment items toolbar
+        - Separate toolbar below main buttons showing all equipment items from the same inventory as the vehicle
+        - Lists equipment items vertically in a scrollable pane
+        - Clicking an equipment item puts a ghost in the cursor for manual placement
+        - Shows item icons and counts in tooltips
+        - Supports quality-aware equipment items
+      - Equipment removal functionality
+        - Confirm button now removes equipment marked for removal/deconstruction
+        - Removed equipment is automatically returned to the container inventory
+        - Uses grid.take() API to properly remove equipment and convert back to items
+        - Preserves equipment quality when returning items to inventory
+        - Removal happens before ghost filling when clicking confirm
 ---------------------------------------------------------------------------------------------------
 Version: 2.9.3
 Date: 2025-12-18

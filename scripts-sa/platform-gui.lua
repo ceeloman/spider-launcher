@@ -7,27 +7,67 @@ local platform_gui = {}
 platform_gui.DEPLOY_BUTTON_NAME = "spider_launcher_platform_deploy_button"
 
 -- Check if platform is stopped above a planet
--- Returns planet_name if valid, nil if in transit or invalid
+-- Returns planet_name, planet_surface if valid, nil if in transit or invalid
 function platform_gui.get_platform_planet_name(player)
     if not player or not player.valid then
-        return nil
+        return nil, nil
     end
     
     -- Check if player is on a platform surface
     if not player.surface or not player.surface.platform then
-        return nil
+        return nil, nil
     end
     
     -- Check if platform has space_location (if not, it's in transit)
-    if not player.surface.platform.space_location then
-        return nil
+    local space_location = player.surface.platform.space_location
+    if not space_location then
+        return nil, nil
     end
     
-    -- Extract the planet name from the platform's space_location
-    local location_str = tostring(player.surface.platform.space_location)
-    local planet_name = location_str:match(": ([^%(]+) %(planet%)")
+    -- Try to get planet name from space_location
+    -- In Space Age, space_location might be a surface reference or have properties
+    local planet_name = nil
+    local planet_surface = nil
     
-    return planet_name
+    -- Try multiple approaches to get the planet name
+    -- First, try accessing space_location.name directly (it might be a surface reference)
+    local success, name_result = pcall(function()
+        return space_location.name
+    end)
+    if success and name_result then
+        planet_name = name_result
+        -- Check if space_location itself is a surface
+        local surface_success, is_surface = pcall(function()
+            return space_location.index ~= nil
+        end)
+        if surface_success and is_surface then
+            planet_surface = space_location
+        end
+    end
+    
+    -- If that didn't work, try string parsing as fallback
+    if not planet_name then
+        local location_str = tostring(space_location)
+        -- Try multiple patterns to extract planet name
+        planet_name = location_str:match(": ([^%(]+) %(planet%)")
+        if not planet_name then
+            -- Try alternative pattern without parentheses
+            planet_name = location_str:match(": ([^:]+)$")
+            if planet_name then
+                planet_name = planet_name:match("^%s*(.-)%s*$") -- trim whitespace
+            end
+        end
+        if planet_name then
+            planet_surface = game.get_surface(planet_name)
+        end
+    end
+    
+    -- If we got a name but not a surface, try to get the surface
+    if planet_name and not planet_surface then
+        planet_surface = game.get_surface(planet_name)
+    end
+    
+    return planet_name, planet_surface
 end
 
 -- Get or create the deploy button for platform GUI
@@ -70,13 +110,178 @@ function platform_gui.get_or_create_deploy_button(player)
     
     -- Check if platform is stopped above a planet
     -- Use the hub's surface to check platform status
-    local planet_name = nil
-    if hub_surface.platform.space_location then
-        local location_str = tostring(hub_surface.platform.space_location)
-        planet_name = location_str:match(": ([^%(]+) %(planet%)")
+    local planet_name = nil  -- This will be LocalisedString for display
+    local planet_surface_name = nil  -- This will be string for surface lookup
+    local planet_surface = nil
+    
+    local space_location = hub_surface.platform.space_location
+    if space_location then
+        -- Try to get localised_name from space_location first (LuaSpaceLocationPrototype has localised_name)
+        local space_localised_success, space_localised = pcall(function()
+            return space_location.localised_name
+        end)
+        if space_localised_success and space_localised then
+            -- Store the LocalisedString for display
+            planet_name = space_localised
+        end
+        
+        -- Also get the actual name (string) for surface lookup
+        local space_name_success, space_name = pcall(function()
+            return space_location.name
+        end)
+        if space_name_success and space_name then
+            planet_surface_name = space_name
+        end
+        
+        -- Try to get planet from platform surface or space_location
+        local planet = nil
+        
+        -- First, try to get planet from hub_surface.platform.planet
+        local planet_success, planet_result = pcall(function()
+            return hub_surface.platform.planet
+        end)
+        if planet_success and planet_result then
+            planet = planet_result
+        end
+        
+        -- If that didn't work, try getting planet from space_location
+        if not planet then
+            local space_planet_success, space_planet_result = pcall(function()
+                return space_location.planet
+            end)
+            if space_planet_success and space_planet_result then
+                planet = space_planet_result
+            end
+        end
+        
+        -- If we have a planet, try to get associated_surfaces
+        if planet then
+            local surfaces_success, associated_surfaces = pcall(function()
+                return planet.associated_surfaces
+            end)
+            if surfaces_success and associated_surfaces then
+                -- Check specifically for "arrival" in associated surfaces (check both name and localised_name)
+                local arrival_surface = nil
+                for _, surface in ipairs(associated_surfaces) do
+                    local is_arrival = false
+                    -- Check name
+                    if surface.name:lower():find("arrival") then
+                        is_arrival = true
+                    end
+                    -- Check localised_name
+                    if not is_arrival then
+                        local localised_success, localised_name = pcall(function()
+                            return surface.localised_name
+                        end)
+                        if localised_success and localised_name then
+                            -- Can't easily check LocalisedString for "arrival", skip this check
+                            -- We'll rely on surface.name check above
+                        end
+                    end
+                    if is_arrival then
+                        arrival_surface = surface
+                        break
+                    end
+                end
+                
+                -- Get the first associated surface (usually the main planet surface)
+                if #associated_surfaces > 0 then
+                    -- Prefer arrival surface if found, otherwise use first
+                    planet_surface = arrival_surface or associated_surfaces[1]
+                    planet_surface_name = planet_surface.name  -- Store surface name for lookups
+                    
+                    -- If we don't already have planet_name from space_location.localised_name, try surface
+                    if not planet_name then
+                        -- Fallback to surface localised_name
+                        local localised_success, localised_name = pcall(function()
+                            return planet_surface.localised_name
+                        end)
+                        if localised_success and localised_name then
+                            planet_name = localised_name  -- Use LocalisedString directly
+                        else
+                            planet_name = planet_surface.name
+                        end
+                    end
+                end
+            end
+            
+            -- If we still don't have a surface, try planet.name
+            if not planet_surface then
+                -- Note: LuaPlanet doesn't have localised_name, so skip this
+                -- We already got it from space_location above
+                -- Still need to get the surface - try using planet.name to find the surface
+                local planet_name_success, planet_name_result = pcall(function()
+                    return planet.name
+                end)
+                if planet_name_success and planet_name_result then
+                    planet_surface_name = planet_name_result
+                    -- If we don't have planet_name yet, use planet.name
+                    if not planet_name then
+                        planet_name = planet_name_result
+                    end
+                    planet_surface = game.get_surface(planet_surface_name)
+                end
+            end
+        end
+        
+        -- Fallback: Try to get planet name from space_location.name (prototype name)
+        if not planet_name then
+            local success, name_result = pcall(function()
+                return space_location.name
+            end)
+            if success and name_result then
+                -- Try to get planet from game.planets using this name
+                local planet_lookup = game.planets[name_result]
+                if planet_lookup then
+                    planet = planet_lookup
+                    
+                    -- Get planet's localised_name first
+                    local planet_localised_success, planet_localised = pcall(function()
+                        return planet.localised_name
+                    end)
+                    -- Note: LuaPlanet doesn't have localised_name, skip this
+                    -- We already got it from space_location above
+                    
+                    -- Try associated_surfaces to get the surface
+                    local surfaces_success, associated_surfaces = pcall(function()
+                        return planet.associated_surfaces
+                    end)
+                    if surfaces_success and associated_surfaces and #associated_surfaces > 0 then
+                        planet_surface = associated_surfaces[1]
+                        planet_surface_name = planet_surface.name
+                    end
+                end
+            end
+        end
+        
+        -- Final fallback: string parsing
+        if not planet_surface_name then
+            local location_str = tostring(space_location)
+            planet_surface_name = location_str:match(": ([^%(]+) %(planet%)")
+            if planet_surface_name then
+                if not planet_name then
+                    planet_name = planet_surface_name
+                end
+                planet_surface = game.get_surface(planet_surface_name)
+            end
+        end
+        
+        -- If we got a name but not a surface, try to get the surface
+        if planet_surface_name and not planet_surface then
+            planet_surface = game.get_surface(planet_surface_name)
+        end
+        
+        -- Only log errors
+        if not planet_name then
+            -- Error: Failed to extract planet_name
+        end
+        
+        if not planet_surface then
+            -- Error: Failed to get planet_surface
+        end
     end
     
-    if not planet_name then
+    if not planet_name or not planet_surface then
         -- Platform is in transit or invalid - remove button if it exists
         platform_gui.remove_deploy_button(player)
         return nil
@@ -101,7 +306,9 @@ function platform_gui.get_or_create_deploy_button(player)
                 local button = button_flow[platform_gui.DEPLOY_BUTTON_NAME .. "_btn"]
                 if button and button.valid then
                     -- Update button tooltip with current planet name
-                    button.tooltip = {"", "Deploy a vehicle to ", planet_name}
+                    button.tooltip = {"", "Open deployment menu to deploy a vehicle to ", planet_name}
+                    -- Update button caption with sprite
+                    button.caption = {"", "[img=ovd_cargo_pod]", " Deploy a vehicle to ", planet_name}
                 end
             end
         end
@@ -208,11 +415,11 @@ function platform_gui.get_or_create_deploy_button(player)
         direction = "vertical"
     }
     
-    -- Create button with text only (no sprite for now)
+    -- Create button with sprite and text
     local deploy_button = button_flow.add{
         type = "button",
         name = platform_gui.DEPLOY_BUTTON_NAME .. "_btn",
-        caption = {"", "Deploy a vehicle to ", planet_name},
+        caption = {"", "[img=ovd_cargo_pod]", " Deploy a vehicle to ", planet_name},
         style = "button",
         tooltip = {"", "Open deployment menu to deploy a vehicle to ", planet_name}
     }
@@ -271,21 +478,181 @@ function platform_gui.on_deploy_button_click(player)
     end
     
     -- Check if platform is stopped above a planet
-    local planet_name = nil
-    if hub_surface.platform.space_location then
-        local location_str = tostring(hub_surface.platform.space_location)
-        planet_name = location_str:match(": ([^%(]+) %(planet%)")
+    local planet_name = nil  -- For display (can be LocalisedString)
+    local planet_surface_name = nil  -- For surface lookup (must be string)
+    local planet_surface = nil
+    
+    local space_location = hub_surface.platform.space_location
+    if space_location then
+        -- Try to get localised_name from space_location first (LuaSpaceLocationPrototype has localised_name)
+        local space_localised_success, space_localised = pcall(function()
+            return space_location.localised_name
+        end)
+        if space_localised_success and space_localised then
+            planet_name = space_localised  -- Use LocalisedString directly
+        end
+        
+        -- Also get the actual name (string) for surface lookup
+        local space_name_success, space_name = pcall(function()
+            return space_location.name
+        end)
+        if space_name_success and space_name then
+            planet_surface_name = space_name
+        end
+        
+        -- Try to get planet from platform surface or space_location
+        local planet = nil
+        
+        -- First, try to get planet from hub_surface.platform.planet
+        local planet_success, planet_result = pcall(function()
+            return hub_surface.platform.planet
+        end)
+        if planet_success and planet_result then
+            planet = planet_result
+        end
+        
+        -- If that didn't work, try getting planet from space_location
+        if not planet then
+            local space_planet_success, space_planet_result = pcall(function()
+                return space_location.planet
+            end)
+            if space_planet_success and space_planet_result then
+                planet = space_planet_result
+            end
+        end
+        
+        -- If we have a planet, try to get associated_surfaces
+        if planet then
+            local surfaces_success, associated_surfaces = pcall(function()
+                return planet.associated_surfaces
+            end)
+            if surfaces_success and associated_surfaces then
+                -- Check specifically for "arrival" in associated surfaces (check both name and localised_name)
+                local arrival_surface = nil
+                for _, surface in ipairs(associated_surfaces) do
+                    local is_arrival = false
+                    -- Check name
+                    if surface.name:lower():find("arrival") then
+                        is_arrival = true
+                    end
+                    -- Check localised_name
+                    if not is_arrival then
+                        local localised_success, localised_name = pcall(function()
+                            return surface.localised_name
+                        end)
+                        if localised_success and localised_name then
+                            -- Can't easily check LocalisedString for "arrival", skip this check
+                            -- We'll rely on surface.name check above
+                        end
+                    end
+                    if is_arrival then
+                        arrival_surface = surface
+                        break
+                    end
+                end
+                
+                -- Get the first associated surface (usually the main planet surface)
+                if #associated_surfaces > 0 then
+                    -- Prefer arrival surface if found, otherwise use first
+                    planet_surface = arrival_surface or associated_surfaces[1]
+                    
+                    -- If we don't already have planet_name from space_location.localised_name, try surface
+                    if not planet_name then
+                        -- Fallback to surface localised_name
+                        local localised_success, localised_name = pcall(function()
+                            return planet_surface.localised_name
+                        end)
+                        if localised_success and localised_name then
+                            planet_name = localised_name  -- Use LocalisedString directly
+                        else
+                            planet_name = planet_surface.name
+                        end
+                    end
+                end
+            end
+            
+            -- If we still don't have a surface, try planet.name
+            if not planet_surface then
+                -- Note: LuaPlanet doesn't have localised_name, skip this
+                -- We already got it from space_location above
+                -- Try planet.name
+                local planet_name_success, planet_name_result = pcall(function()
+                    return planet.name
+                end)
+                if planet_name_success and planet_name_result then
+                    planet_surface_name = planet_name_result
+                    if not planet_name then
+                        planet_name = planet_name_result
+                    end
+                    planet_surface = game.get_surface(planet_surface_name)
+                end
+            end
+        end
+        
+        -- Fallback: Try to get planet name from space_location.name (prototype name)
+        if not planet_name then
+            local success, name_result = pcall(function()
+                return space_location.name
+            end)
+            if success and name_result then
+                -- Try to get planet from game.planets using this name
+                local planet_lookup = game.planets[name_result]
+                if planet_lookup then
+                    planet = planet_lookup
+                    -- Try associated_surfaces again
+                    local surfaces_success, associated_surfaces = pcall(function()
+                        return planet.associated_surfaces
+                    end)
+                    if surfaces_success and associated_surfaces and #associated_surfaces > 0 then
+                        -- Check for arrival
+                        local arrival_surface = nil
+                        for _, surface in ipairs(associated_surfaces) do
+                            if surface.name:lower():find("arrival") then
+                                arrival_surface = surface
+                                break
+                            end
+                        end
+                        planet_surface = arrival_surface or associated_surfaces[1]
+                        
+                        -- Try to get localised_name from the planet first
+                        local planet_localised_success, planet_localised = pcall(function()
+                            return planet.localised_name
+                        end)
+                        -- Note: LuaPlanet doesn't have localised_name, skip this
+                        -- Fallback to surface localised_name
+                        local localised_success, localised_name = pcall(function()
+                            return planet_surface.localised_name
+                        end)
+                        if localised_success and localised_name then
+                            planet_name = localised_name  -- Use LocalisedString directly
+                        else
+                            planet_name = planet_surface.name
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Final fallback: string parsing
+        if not planet_surface_name then
+            local location_str = tostring(space_location)
+            planet_surface_name = location_str:match(": ([^%(]+) %(planet%)")
+            if planet_surface_name then
+                if not planet_name then
+                    planet_name = planet_surface_name
+                end
+                planet_surface = game.get_surface(planet_surface_name)
+            end
+        end
+        
+        -- If we got a name but not a surface, try to get the surface
+        if planet_surface_name and not planet_surface then
+            planet_surface = game.get_surface(planet_surface_name)
+        end
     end
     
-    if not planet_name then
+    if not planet_name or not planet_surface then
         player.print("Vehicle Deployment is not possible while the platform is in transit")
-        return
-    end
-    
-    -- Get the planet surface
-    local planet_surface = game.get_surface(planet_name)
-    if not planet_surface then
-        player.print("Could not find planet surface: " .. planet_name)
         return
     end
     
