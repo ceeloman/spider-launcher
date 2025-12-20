@@ -7,7 +7,7 @@
   "dependencies": [
     "base >= 2.0.43",
     "? space-age",
-    "! space-exploration",
+    "? space-exploration",
     "? ceelos-vehicle-tweaks"
   ],
   "space_travel_required": true,

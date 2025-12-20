@@ -2,6 +2,8 @@
 local map_gui = require("scripts-sa.map-gui")
 local deployment = require("scripts-sa.deployment")
 local vehicles_list = require("scripts-sa.vehicles-list")
+local platform_gui = require("scripts-sa.platform-gui")
+local equipment_grid_fill = require("scripts-sa.equipment-grid-fill")
 
 -- Debug logging function
 local function debug_log(message)
@@ -117,6 +119,28 @@ script.on_event(defines.events.on_gui_click, function(event)
         else
             debug_log("Could not find slider or text field: " .. slider_name .. ", " .. text_field_name)
         end
+    end
+    
+    -- Check for platform deploy button click
+    if element.name == platform_gui.DEPLOY_BUTTON_NAME .. "_btn" then
+        local player = game.get_player(event.player_index)
+        if player and player.valid then
+            platform_gui.on_deploy_button_click(player)
+        end
+        return
+    end
+    
+    -- Check for equipment grid fill button click
+    if element.name == equipment_grid_fill.BUTTON_NAME .. "_btn" then
+        game.print("[CONTROL] Equipment fill button clicked! element.name=" .. tostring(element.name))
+        local player = game.get_player(event.player_index)
+        if player and player.valid then
+            game.print("[CONTROL] Calling on_fill_button_click for player " .. player.name)
+            equipment_grid_fill.on_fill_button_click(player)
+        else
+            game.print("[CONTROL] Player invalid or not found")
+        end
+        return
     end
     
     -- Pass to map_gui for other button handling
@@ -276,6 +300,40 @@ script.on_event(defines.events.on_gui_closed, function(event)
     if player.gui.screen["spidertron_deployment_frame"] then
         player.gui.screen["spidertron_deployment_frame"].destroy()
     end
+end)
+
+-- Helper function to initialize scout-o-tron equipment grid
+-- local function initialize_scout_grid(stack)
+--     if not stack or not stack.valid_for_read or stack.name ~= "scout-o-tron" then
+--         return false
+--     end
+    
+--     -- Create grid if it doesn't exist
+--     if not stack.grid then
+--         local success, grid = pcall(function()
+--             return stack.create_grid()
+--         end)
+--         if success and grid then
+--             return true
+--         end
+--     end
+    
+--     return false
+-- end
+
+-- Handle GUI opening (to show platform deploy button and equipment fill button)
+script.on_event(defines.events.on_gui_opened, function(event)
+    local player = game.get_player(event.player_index)
+    if not player or not player.valid then return end
+    
+    game.print("[CONTROL] on_gui_opened event fired")
+    
+    -- Try to create/update platform deploy button immediately
+    -- The periodic check (every 1 second) will also try if this fails
+    platform_gui.get_or_create_deploy_button(player)
+    
+    -- Create equipment grid fill button immediately
+    equipment_grid_fill.get_or_create_fill_button(player)
 end)
 
 script.on_event(defines.events.on_tick, function(event)

@@ -1,234 +1,314 @@
 -- scripts-sa/platform-gui.lua
---[[is this redundant?
+local map_gui = require("scripts-sa.map-gui")
+
 local platform_gui = {}
 
--- Create the deploy button when viewing a planet
-function platform_gui.create_deploy_button(player)
-    -- Check if button already exists
-    if player.gui.screen["orbital_spidertron_frame"] then
-        return
+-- Button name constant
+platform_gui.DEPLOY_BUTTON_NAME = "spider_launcher_platform_deploy_button"
+
+-- Check if platform is stopped above a planet
+-- Returns planet_name if valid, nil if in transit or invalid
+function platform_gui.get_platform_planet_name(player)
+    if not player or not player.valid then
+        return nil
     end
     
-    -- Create frame at top of screen
-    local frame = player.gui.screen.add{
-        type = "frame",
-        name = "orbital_spidertron_frame",
-        caption = "Orbital Spidertron",
-        direction = "vertical"
-    }
+    -- Check if player is on a platform surface
+    if not player.surface or not player.surface.platform then
+        return nil
+    end
     
-    -- Position at top middle of screen
-    local resolution = player.display_resolution
-    frame.location = {x = resolution.width / 2 - 100, y = 10}
+    -- Check if platform has space_location (if not, it's in transit)
+    if not player.surface.platform.space_location then
+        return nil
+    end
     
-    -- Add button
-    local button_flow = frame.add{
-        type = "flow",
-        name = "button_flow",
-        direction = "horizontal"
-    }
+    -- Extract the planet name from the platform's space_location
+    local location_str = tostring(player.surface.platform.space_location)
+    local planet_name = location_str:match(": ([^%(]+) %(planet%)")
     
-    -- Add spidertron icon
-    button_flow.add{
-        type = "sprite-button",
-        name = "spidertron_icon",
-        sprite = "item/spidertron",
-        tooltip = "Orbital Spidertron Deployment"
-    }
-    
-    -- Add deploy button
-    button_flow.add{
-        type = "button",
-        name = "deploy_spidertron_btn",
-        caption = "Deploy Spidertron",
-        tooltip = "Deploy a spidertron from orbit to this planet",
-        style = "confirm_button"
-    }
-    
-    log("Deploy button created")
+    return planet_name
 end
 
--- Check for spidertrons in orbit above the current planet
-function platform_gui.find_orbital_spidertrons(planet_surface)
-    local available_spidertrons = {}
+-- Get or create the deploy button for platform GUI
+-- Returns the button element, or nil if button shouldn't be shown
+function platform_gui.get_or_create_deploy_button(player)
+    if not player or not player.valid then
+        return nil
+    end
     
-    -- Get all platforms
-    if remote.interfaces["space-age"] and remote.interfaces["space-age"]["get_platforms"] then
-        for _, force in pairs(game.forces) do
-            local platforms = remote.call("space-age", "get_platforms", {force = force.name})
-            if platforms then
-                for _, platform in pairs(platforms) do
-                    -- Check if platform is over this planet
-                    if platform.space_location and platform_gui.is_over_planet(platform, planet_surface) then
-                        -- Check for spidertrons in hub
-                        if platform.hub and platform.hub.valid then
-                            local spidertrons = platform_gui.get_spidertrons_from_hub(platform.hub)
-                            if #spidertrons > 0 then
-                                for _, spidertron in ipairs(spidertrons) do
-                                    table.insert(available_spidertrons, {
-                                        platform = platform,
-                                        hub = platform.hub,
-                                        slot = spidertron.slot,
-                                        inv_type = spidertron.inv_type,
-                                        name = spidertron.name,
-                                        tooltip = spidertron.tooltip
-                                    })
-                                end
-                            end
-                        end
-                    end
+    -- Check if player has opened a platform hub
+    local opened = player.opened
+    if not opened or not opened.valid then
+        -- Remove button if it exists and player closed the GUI
+        platform_gui.remove_deploy_button(player)
+        return nil
+    end
+    
+    -- Check if opened is an entity (not an equipment grid or other type)
+    -- Equipment grids don't have .surface property, so check that safely
+    local hub_surface = nil
+    local success, result = pcall(function()
+        return opened.surface
+    end)
+    
+    if not success or not result then
+        -- Not an entity (could be equipment grid, etc.) - remove button if it exists
+        platform_gui.remove_deploy_button(player)
+        return nil
+    end
+    
+    hub_surface = result
+    
+    -- Check if opened entity is on a platform surface
+    -- Use the opened entity's surface, not the player's surface
+    if not hub_surface or not hub_surface.platform then
+        -- Not a platform hub - remove button if it exists
+        platform_gui.remove_deploy_button(player)
+        return nil
+    end
+    
+    -- Check if platform is stopped above a planet
+    -- Use the hub's surface to check platform status
+    local planet_name = nil
+    if hub_surface.platform.space_location then
+        local location_str = tostring(hub_surface.platform.space_location)
+        planet_name = location_str:match(": ([^%(]+) %(planet%)")
+    end
+    
+    if not planet_name then
+        -- Platform is in transit or invalid - remove button if it exists
+        platform_gui.remove_deploy_button(player)
+        return nil
+    end
+    
+    -- Get the relative GUI
+    local relative_gui = player.gui.relative
+    if not relative_gui then
+        return nil
+    end
+    
+    -- Check if toolbar frame already exists
+    local toolbar_frame = relative_gui[platform_gui.DEPLOY_BUTTON_NAME]
+    
+    -- Check if toolbar frame exists and is valid
+    if toolbar_frame and toolbar_frame.valid then
+        -- Find the button inside the frame structure
+        local button_frame = toolbar_frame["button_frame"]
+        if button_frame and button_frame.valid then
+            local button_flow = button_frame["button_flow"]
+            if button_flow and button_flow.valid then
+                local button = button_flow[platform_gui.DEPLOY_BUTTON_NAME .. "_btn"]
+                if button and button.valid then
+                    -- Update button tooltip with current planet name
+                    button.tooltip = {"", "Deploy a vehicle to ", planet_name}
                 end
             end
         end
+        return toolbar_frame
     end
     
-    return available_spidertrons
-end
-
--- Check if a platform is over a specific planet
-function platform_gui.is_over_planet(platform, planet_surface)
-    -- This is a placeholder implementation
-    -- In real code, you would check if the platform's space_location
-    -- corresponds to the given planet surface
+    -- Try to find the correct GUI type for the opened entity
+    local gui_type = nil
+    local anchor = nil
     
-    -- For testing, always return true
-    return true
-end
-
--- Get spidertrons from a hub entity
-function map_gui.get_spidertrons_from_hub(hub_entity)
-    local result = {}
-    
-    if not hub_entity or not hub_entity.valid then 
-        return result 
-    end
-    
-    -- Get the inventory
-    local inventory = hub_entity.get_inventory(defines.inventory.chest)
-    if inventory then
-        -- Count how many spidertrons are in the inventory
-        local spidertron_count = inventory.get_item_count("spidertron")
-        if spidertron_count > 0 then
-            log("Found " .. spidertron_count .. " spidertrons in inventory")
-            
-            -- For each slot in the inventory
-            for i = 1, #inventory do
-                -- Check if it's a spidertron
-                if inventory[i].valid_for_read and inventory[i].name == "spidertron" then
-                    -- Add it to our result
-                    table.insert(result, {
-                        name = "Spidertron #" .. i,
-                        tooltip = "Slot: " .. i,
-                        slot = i,
-                        inv_type = defines.inventory.chest
-                    })
-                end
-            end
+    -- Check what type of entity is opened
+    if opened.type == "container" then
+        if defines.relative_gui_type.container_gui then
+            gui_type = defines.relative_gui_type.container_gui
+        end
+    elseif opened.type == "cargo-bay" then
+        if defines.relative_gui_type.cargo_bay_gui then
+            gui_type = defines.relative_gui_type.cargo_bay_gui
+        elseif defines.relative_gui_type.container_gui then
+            gui_type = defines.relative_gui_type.container_gui
+        end
+    elseif opened.type == "space-platform-hub" or opened.name == "space-platform-hub" then
+        -- Try space_platform_hub_gui first (this should be the correct one!)
+        if defines.relative_gui_type.space_platform_hub_gui then
+            gui_type = defines.relative_gui_type.space_platform_hub_gui
+        elseif defines.relative_gui_type.platform_gui then
+            gui_type = defines.relative_gui_type.platform_gui
+        elseif defines.relative_gui_type.container_gui then
+            gui_type = defines.relative_gui_type.container_gui
+        elseif defines.relative_gui_type.cargo_bay_gui then
+            gui_type = defines.relative_gui_type.cargo_bay_gui
         end
     end
     
-    return result
-end
-
--- Show spidertron selection dialog
-function platform_gui.show_selection_dialog(player, spidertrons)
-    if #spidertrons == 0 then
-        --player.print("No spidertrons are available in orbit.")
-        return
+    -- Try platform_gui as fallback
+    if not gui_type and defines.relative_gui_type.platform_gui then
+        gui_type = defines.relative_gui_type.platform_gui
     end
     
-    -- Close existing dialog if any
-    if player.gui.screen["spidertron_selection_frame"] then
-        player.gui.screen["spidertron_selection_frame"].destroy()
-    end
-    
-    -- Create the selection dialog
-    local frame = player.gui.screen.add{
-        type = "frame",
-        name = "spidertron_selection_frame",
-        caption = "Select Spidertron to Deploy",
-        direction = "vertical"
-    }
-    
-    -- Center the frame
-    frame.force_auto_center()
-    
-    -- Add list of spidertrons
-    local list_flow = frame.add{
-        type = "flow",
-        name = "list_flow",
-        direction = "vertical"
-    }
-    
-    for i, spidertron in ipairs(spidertrons) do
-        list_flow.add{
-            type = "button",
-            name = "select_spidertron_" .. i,
-            caption = spidertron.name,
-            tooltip = spidertron.tooltip
+    -- Create anchor if we have a GUI type
+    if gui_type then
+        anchor = {
+            gui = gui_type,
+            position = defines.relative_gui_position.bottom
         }
     end
     
-    -- Add cancel button
-    local button_flow = frame.add{
+    -- Use styles with consistent appearance (like shared_toolbar)
+    local frame_style = "frame"
+    local inner_frame_style = "inside_shallow_frame"
+    
+    -- Create the toolbar frame (like shared_toolbar does)
+    local frame_config = {
+        type = "frame",
+        name = platform_gui.DEPLOY_BUTTON_NAME,
+        style = frame_style
+    }
+    
+    -- Add anchor if we have one
+    if anchor then
+        frame_config.anchor = anchor
+    end
+    
+    -- Try to create the frame
+    local success, toolbar_frame = pcall(function()
+        return relative_gui.add(frame_config)
+    end)
+    
+    if not success then
+        -- If creation failed with anchor, try without anchor
+        frame_config.anchor = nil
+        success, toolbar_frame = pcall(function()
+            return relative_gui.add(frame_config)
+        end)
+    end
+    
+    if not success or not toolbar_frame then
+        return nil
+    end
+    
+    -- Apply style modifications to toolbar frame
+    toolbar_frame.style.horizontally_stretchable = false
+    toolbar_frame.style.vertically_stretchable = false
+    toolbar_frame.style.top_padding = 3
+    toolbar_frame.style.bottom_padding = 6
+    toolbar_frame.style.left_padding = 6
+    toolbar_frame.style.right_padding = 6
+    
+    -- Create button_frame (like shared_toolbar)
+    local button_frame = toolbar_frame.add{
+        type = "frame",
+        name = "button_frame",
+        direction = "vertical",
+        style = inner_frame_style
+    }
+    
+    -- Apply style modifications to button_frame
+    button_frame.style.vertically_stretchable = false
+    
+    -- Create button_flow (like shared_toolbar)
+    local button_flow = button_frame.add{
         type = "flow",
         name = "button_flow",
-        direction = "horizontal"
+        direction = "vertical"
     }
     
-    button_flow.add{
+    -- Create button with text only (no sprite for now)
+    local deploy_button = button_flow.add{
         type = "button",
-        name = "cancel_selection",
-        caption = "Cancel"
+        name = platform_gui.DEPLOY_BUTTON_NAME .. "_btn",
+        caption = {"", "Deploy a vehicle to ", planet_name},
+        style = "button",
+        tooltip = {"", "Open deployment menu to deploy a vehicle to ", planet_name}
     }
     
-    -- Store selection data
-    storage.spidertron_selection = {
-        spidertrons = spidertrons,
-        planet_surface = player.surface
-    }
-end
-
--- Handle GUI click events
-function platform_gui.on_gui_click(event)
-    local element = event.element
-    if not element or not element.valid then return end
-    
-    local player = game.get_player(event.player_index)
-    if not player then return end
-    
-    if element.name == "deploy_spidertron_btn" then
-        -- Find spidertrons in orbit above current planet
-        local spidertrons = platform_gui.find_orbital_spidertrons(player.surface)
-        platform_gui.show_selection_dialog(player, spidertrons)
-    elseif element.name:find("select_spidertron_") then
-        local index = tonumber(element.name:sub(17))
-        if not index or not storage.spidertron_selection then return end
-        
-        local spidertron = storage.spidertron_selection.spidertrons[index]
-        if not spidertron then return end
-        
-        -- Close the selection dialog
-        if player.gui.screen["spidertron_selection_frame"] then
-            player.gui.screen["spidertron_selection_frame"].destroy()
-        end
-        
-        -- Deploy the selected spidertron (placeholder for now)
-        --player.print("Spidertron deployment commencing for: " .. spidertron.name)
-    elseif element.name == "cancel_selection" then
-        -- Close the selection dialog
-        if player.gui.screen["spidertron_selection_frame"] then
-            player.gui.screen["spidertron_selection_frame"].destroy()
-        end
+    if deploy_button and deploy_button.valid then
+        return toolbar_frame
+    else
+        return nil
     end
 end
 
 -- Remove the deploy button
-function platform_gui.destroy_deploy_button(player)
-    if player.gui.screen["orbital_spidertron_frame"] then
-        player.gui.screen["orbital_spidertron_frame"].destroy()
+function platform_gui.remove_deploy_button(player)
+    if not player or not player.valid then
+        return
+    end
+    
+    local relative_gui = player.gui.relative
+    if not relative_gui then
+        return
+    end
+    
+    local toolbar_frame = relative_gui[platform_gui.DEPLOY_BUTTON_NAME]
+    if toolbar_frame and toolbar_frame.valid then
+        toolbar_frame.destroy()
     end
 end
 
+-- Handle button click
+function platform_gui.on_deploy_button_click(player)
+    if not player or not player.valid then
+        return
+    end
+    
+    -- Check if player has opened a platform hub
+    local opened = player.opened
+    if not opened or not opened.valid then
+        return
+    end
+    
+    -- Check if opened is an entity (not an equipment grid or other type)
+    local hub_surface = nil
+    local success, result = pcall(function()
+        return opened.surface
+    end)
+    
+    if not success or not result then
+        return
+    end
+    
+    hub_surface = result
+    
+    -- Check if opened entity is on a platform surface
+    if not hub_surface or not hub_surface.platform then
+        return
+    end
+    
+    -- Check if platform is stopped above a planet
+    local planet_name = nil
+    if hub_surface.platform.space_location then
+        local location_str = tostring(hub_surface.platform.space_location)
+        planet_name = location_str:match(": ([^%(]+) %(planet%)")
+    end
+    
+    if not planet_name then
+        player.print("Vehicle Deployment is not possible while the platform is in transit")
+        return
+    end
+    
+    -- Get the planet surface
+    local planet_surface = game.get_surface(planet_name)
+    if not planet_surface then
+        player.print("Could not find planet surface: " .. planet_name)
+        return
+    end
+    
+    -- Close any open GUIs first (like the shortcut handler does)
+    if player.opened then
+        player.opened = nil
+    end
+    
+    -- Switch to the planet surface and show deployment menu (like shortcut handler does)
+    local target_position = {x = 0, y = 0}
+    player.set_controller{
+        type = defines.controllers.remote,
+        surface = planet_surface,
+        position = target_position
+    }
+    
+    -- Store data needed for next tick to show deployment menu
+    -- This matches the shortcut handler pattern
+    storage.pending_deployment = storage.pending_deployment or {}
+    storage.pending_deployment[player.index] = {
+        planet_surface = planet_surface,
+        planet_name = planet_name
+    }
+end
+
 return platform_gui
-]]

@@ -100,37 +100,160 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     
     if stack.grid then
         has_grid = true
-        -- game.print("[EQUIPMENT DEBUG] Reading grid from stack, found " .. #stack.grid.equipment .. " equipment items")
         
-        -- First pass: collect ghost equipment positions to remove
-        local ghost_positions = {}
+        -- First pass: collect ghost equipment and try to replace with real equipment from platform inventory
+        local ghost_equipment_list = {}
         for _, equipment in pairs(stack.grid.equipment) do
             local equipment_name = equipment.name
             local is_ghost = false
+            local base_equipment_name = nil
             
-            -- Check if it's a ghost by name pattern
-            if equipment_name and equipment_name:match("%-ghost$") then
+            -- Check if it's a ghost by prototype type first (most reliable)
+            if equipment.prototype and equipment.prototype.type == "equipment-ghost" then
                 is_ghost = true
-                -- game.print("[EQUIPMENT DEBUG] Found ghost equipment: " .. equipment_name)
-            -- Check if it's a ghost by prototype type
-            elseif equipment.prototype and equipment.prototype.type == "equipment-ghost" then
+                -- Get the base equipment name from ghost_name property
+                if equipment.ghost_name then
+                    base_equipment_name = equipment.ghost_name
+                else
+                    -- Fallback: try stripping suffix (but not for "equipment-ghost")
+                    if equipment_name and equipment_name ~= "equipment-ghost" and equipment_name:match("%-ghost$") then
+                        base_equipment_name = equipment_name:gsub("%-ghost$", "")
+                    end
+                end
+            -- Check if it's a ghost by name pattern (but not if it's just "equipment-ghost")
+            elseif equipment_name and equipment_name:match("%-ghost$") and equipment_name ~= "equipment-ghost" then
                 is_ghost = true
-                -- game.print("[EQUIPMENT DEBUG] Found ghost equipment (by type): " .. tostring(equipment_name))
+                base_equipment_name = equipment_name:gsub("%-ghost$", "")
+            -- Check if name is just "equipment-ghost" - need to get base from ghost_name property
+            elseif equipment_name == "equipment-ghost" then
+                is_ghost = true
+                -- Get base name from ghost_name property
+                if equipment.ghost_name then
+                    base_equipment_name = equipment.ghost_name
+                end
             -- Check if name is just "equipment" (likely a ghost from old TFMG)
             elseif equipment_name == "equipment" then
                 is_ghost = true
-                -- game.print("[EQUIPMENT DEBUG] Found generic 'equipment' (likely ghost): " .. equipment_name)
+                -- Can't determine base name from generic "equipment", skip it
             end
             
-            if is_ghost and equipment.valid then
-                table.insert(ghost_positions, {x = equipment.position.x, y = equipment.position.y})
+            if is_ghost and equipment.valid and base_equipment_name then
+                table.insert(ghost_equipment_list, {
+                    position = {x = equipment.position.x, y = equipment.position.y},
+                    base_name = base_equipment_name,
+                    quality = equipment.quality
+                })
             end
         end
         
-        -- Remove all ghost equipment from the grid
-        for _, pos in ipairs(ghost_positions) do
-            stack.grid.take({position = pos})
-            -- game.print("[EQUIPMENT DEBUG] Removed ghost equipment from grid at position {" .. pos.x .. ", " .. pos.y .. "}")
+        -- Try to fill ghost equipment from platform inventory
+        if #ghost_equipment_list > 0 then
+            local hub_inv = hub.get_inventory(defines.inventory.chest)
+            if hub_inv then
+                for _, ghost_data in ipairs(ghost_equipment_list) do
+                    local found_item = nil
+                    local found_quality = nil
+                    
+                    -- Search inventory for items that place this equipment
+                    for i = 1, #hub_inv do
+                        local inv_stack = hub_inv[i]
+                        if inv_stack and inv_stack.valid_for_read then
+                            local item_prototype = prototypes.item[inv_stack.name]
+                            if item_prototype and item_prototype.place_as_equipment_result then
+                                local place_result = item_prototype.place_as_equipment_result
+                                local result_equipment_name = nil
+                                
+                                -- Extract equipment name from place_result
+                                if type(place_result) == "string" then
+                                    result_equipment_name = place_result
+                                elseif place_result and place_result.name then
+                                    result_equipment_name = place_result.name
+                                end
+                                
+                                -- Check if this item places the equipment we need
+                                if result_equipment_name == ghost_data.base_name then
+                                    -- Check quality match if ghost has quality
+                                    local quality_match = true
+                                    if ghost_data.quality then
+                                        local stack_quality = "Normal"
+                                        if inv_stack.quality then
+                                            stack_quality = inv_stack.quality.name
+                                        end
+                                        local ghost_quality_name = "Normal"
+                                        if type(ghost_data.quality) == "table" and ghost_data.quality.name then
+                                            ghost_quality_name = ghost_data.quality.name
+                                        elseif type(ghost_data.quality) == "string" then
+                                            ghost_quality_name = ghost_data.quality
+                                        end
+                                        -- Normalize quality names for comparison (case-insensitive)
+                                        stack_quality = string.lower(stack_quality)
+                                        ghost_quality_name = string.lower(ghost_quality_name)
+                                        quality_match = (stack_quality == ghost_quality_name)
+                                    end
+                                    
+                                    if quality_match then
+                                        found_item = inv_stack.name
+                                        found_quality = inv_stack.quality
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    
+                    -- If we found a matching item, add it to grid_data and remove from inventory
+                    if found_item then
+                        local item_prototype = prototypes.item[found_item]
+                        if item_prototype and item_prototype.place_as_equipment_result then
+                            local place_result = item_prototype.place_as_equipment_result
+                            local equipment_name = nil
+                            
+                            if type(place_result) == "string" then
+                                equipment_name = place_result
+                            elseif place_result and place_result.name then
+                                equipment_name = place_result.name
+                            end
+                            
+                            if equipment_name then
+                                -- Remove one item from inventory
+                                for i = 1, #hub_inv do
+                                    local inv_stack = hub_inv[i]
+                                    if inv_stack and inv_stack.valid_for_read and inv_stack.name == found_item then
+                                        local stack_quality = "Normal"
+                                        if inv_stack.quality then
+                                            stack_quality = inv_stack.quality.name
+                                        end
+                                        local target_quality = "Normal"
+                                        if found_quality then
+                                            target_quality = found_quality.name
+                                        end
+                                        
+                                        if stack_quality == target_quality then
+                                            inv_stack.count = inv_stack.count - 1
+                                            break
+                                        end
+                                    end
+                                end
+                                
+                                -- Add to grid_data
+                                table.insert(grid_data, {
+                                    name = equipment_name,
+                                    position = {x = ghost_data.position.x, y = ghost_data.position.y},
+                                    energy = nil,  -- New equipment starts with full energy
+                                    quality = found_quality,
+                                    quality_name = found_quality and found_quality.name or nil,
+                                    item_fallback_name = found_item
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+            
+            -- Remove all ghost equipment from the grid (whether replaced or not)
+            for _, ghost_data in ipairs(ghost_equipment_list) do
+                stack.grid.take({position = ghost_data.position})
+            end
         end
         
         -- Second pass: collect real equipment data

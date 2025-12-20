@@ -1,4 +1,24 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.9.4
+Date: 2025-12-19
+  Features:
+    - Equipment grid fill button
+      - Added button to automatically fill equipment grid ghosts from inventory when viewing vehicle equipment grids
+      - Button appears when opening equipment grids for vehicles
+      - Matches ghost equipment with items in inventory and fills them automatically
+    - Platform deploy button
+      - Added deploy button that appears when opening platform hub GUI
+      - Allows direct deployment to the planet the platform is orbiting
+      - Button only shows when platform is stopped above a planet (not in transit)
+  Improvements:
+    - Enhanced ghost equipment handling during deployment
+      - Improved detection of ghost equipment in vehicle grids
+      - Automatically attempts to replace ghost equipment with real equipment from platform inventory before deployment
+      - Better quality matching for ghost equipment replacement
+    - Improved inventory context detection for equipment grids
+      - Better logic to find the correct inventory containing vehicle items when using equipment grid fill
+      - Supports vehicles in player inventory, entity inventories, and cursor stack
+---------------------------------------------------------------------------------------------------
 Version: 2.9.3
 Date: 2025-12-18
   Bug fixes:
