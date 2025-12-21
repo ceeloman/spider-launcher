@@ -329,119 +329,119 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     end
 
  -- Define the delay before the target appears
-local delay_ticks = 60 * 9  -- 9 seconds delay
-local starting_tick = game.tick
+-- local delay_ticks = 60 * 9  -- 9 seconds delay
+-- local starting_tick = game.tick
 
 -- Wait for 9 seconds before starting the light sequence
-local sequence_start = starting_tick + delay_ticks  -- This is when the sequence begins
-local total_animation_ticks = 60 * 8.5  -- 8.5 seconds total animation duration
-local grow_duration_ticks = 60 * 7  -- 7 seconds grow duration
-local shrink_duration_ticks = total_animation_ticks - grow_duration_ticks  -- 1.5 seconds for shrinking
+-- local sequence_start = starting_tick + delay_ticks  -- This is when the sequence begins
+-- local total_animation_ticks = 60 * 8.5  -- 8.5 seconds total animation duration
+-- local grow_duration_ticks = 60 * 7  -- 7 seconds grow duration
+-- local shrink_duration_ticks = total_animation_ticks - grow_duration_ticks  -- 1.5 seconds for shrinking
 
 -- Grow phase - gradually increase size over 7 seconds
 -- High frequency animation with smooth steps
-for i = 0, 84 do  -- 85 steps over 7 seconds (5 ticks between steps)
-    script.on_nth_tick(sequence_start + (i * 5), function(event)
-        if not player.valid then return end
-        
-        -- Size grows during first phase - from 0.3 to 1.5
-        local progress = i / 84  -- Normalized progress (0 to 1)
-        local scale_factor = 0.3 + (progress * 1.2)  -- Grow from 0.3 to 1.5
-        local intensity_factor = 0.3 + (progress * 0.4)  -- Grow intensity from 0.3 to 0.7
-        
-        -- Draw dark background circle only during daytime
-        if player.surface.darkness < 0.3 then
-            rendering.draw_sprite{
-                sprite = "utility/entity_info_dark_background",
-                x_scale = scale_factor * 1.2,
-                y_scale = scale_factor * 1.2,
-                tint = {r = 1, g = 1, b = 1, a = 0.7},
-                render_layer = "ground-patch",
-                target = {x = landing_pos.x, y = landing_pos.y},
-                surface = player.surface,
-                time_to_live = 15
-            }
-        end
-        
-        -- Always add light effects since Vulcanus is dark
-        rendering.draw_light{
-            sprite = "utility/light_small",
-            scale = scale_factor,
-            intensity = intensity_factor,
-            minimum_darkness = 0,
-            color = {r = 1, g = 0.1, b = 0.1},
-            target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
-            time_to_live = 15
-        }
-        
-        -- Outer glow light
-        rendering.draw_light{
-            sprite = "utility/light_small",
-            scale = scale_factor * 1.3,
-            intensity = intensity_factor * 0.7,
-            minimum_darkness = 0,
-            color = {r = 1, g = 0.3, b = 0.1},
-            target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
-            time_to_live = 15
-        }
-    end)
-end
+-- for i = 0, 84 do  -- 85 steps over 7 seconds (5 ticks between steps)
+--     script.on_nth_tick(sequence_start + (i * 5), function(event)
+--         if not player.valid then return end
+--         
+--         -- Size grows during first phase - from 0.3 to 1.5
+--         local progress = i / 84  -- Normalized progress (0 to 1)
+--         local scale_factor = 0.3 + (progress * 1.2)  -- Grow from 0.3 to 1.5
+--         local intensity_factor = 0.3 + (progress * 0.4)  -- Grow intensity from 0.3 to 0.7
+--         
+--         -- Draw dark background circle only during daytime
+--         if player.surface.darkness < 0.3 then
+--             rendering.draw_sprite{
+--                 sprite = "utility/entity_info_dark_background",
+--                 x_scale = scale_factor * 1.2,
+--                 y_scale = scale_factor * 1.2,
+--                 tint = {r = 1, g = 1, b = 1, a = 0.7},
+--                 render_layer = "ground-patch",
+--                 target = {x = landing_pos.x, y = landing_pos.y},
+--                 surface = player.surface,
+--                 time_to_live = 15
+--             }
+--         end
+--         
+--         -- Always add light effects since Vulcanus is dark
+--         rendering.draw_light{
+--             sprite = "utility/light_small",
+--             scale = scale_factor,
+--             intensity = intensity_factor,
+--             minimum_darkness = 0,
+--             color = {r = 1, g = 0.1, b = 0.1},
+--             target = {x = landing_pos.x, y = landing_pos.y},
+--             surface = player.surface,
+--             time_to_live = 15
+--         }
+--         
+--         -- Outer glow light
+--         rendering.draw_light{
+--             sprite = "utility/light_small",
+--             scale = scale_factor * 1.3,
+--             intensity = intensity_factor * 0.7,
+--             minimum_darkness = 0,
+--             color = {r = 1, g = 0.3, b = 0.1},
+--             target = {x = landing_pos.x, y = landing_pos.y},
+--             surface = player.surface,
+--             time_to_live = 15
+--         }
+--     end)
+-- end
 
 -- Shrinking phase - starts 7 seconds after the sequence begins
-local shrink_start = sequence_start + grow_duration_ticks
+-- local shrink_start = sequence_start + grow_duration_ticks
 
 -- Shrink phase - sharper decrease in size over 1.5 seconds
-for i = 0, 18 do  -- 19 steps over 1.5 seconds (5 ticks between steps)
-    script.on_nth_tick(shrink_start + (i * 5), function(event)
-        if not player.valid then return end
-        
-        -- Sharper size reduction - from 1.5 down to 0.3
-        local progress = i / 18  -- Normalized progress (0 to 1)
-        local scale_factor = 1.5 - (progress * 1.2)  -- Shrink from 1.5 to 0.3
-        -- Intensity decreases as we near the end
-        local intensity_factor = 0.7 - (progress * 0.4)  -- Decrease from 0.7 to 0.3
-        
-        -- Draw dark background only during daytime
-        if player.surface.darkness < 0.3 then
-            rendering.draw_sprite{
-                sprite = "utility/entity_info_dark_background",
-                x_scale = scale_factor * 1.2,
-                y_scale = scale_factor * 1.2,
-                tint = {r = 1, g = 1, b = 1, a = 0.7},
-                render_layer = "ground-patch",
-                target = {x = landing_pos.x, y = landing_pos.y},
-                surface = player.surface,
-                time_to_live = 15
-            }
-        end
-        
-        -- Always add light effects
-        rendering.draw_light{
-            sprite = "utility/light_small",
-            scale = scale_factor,
-            intensity = intensity_factor,
-            minimum_darkness = 0,
-            color = {r = 1, g = 0.1, b = 0.1},
-            target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
-            time_to_live = 15
-        }
-        
-        -- Outer glow
-        rendering.draw_light{
-            sprite = "utility/light_small",
-            scale = scale_factor * 1.3,
-            intensity = intensity_factor * 0.8,
-            minimum_darkness = 0,
-            color = {r = 1, g = 0.3, b = 0.1},
-            target = {x = landing_pos.x, y = landing_pos.y},
-            surface = player.surface,
-            time_to_live = 15
-        }
-    end)
-end
+-- for i = 0, 18 do  -- 19 steps over 1.5 seconds (5 ticks between steps)
+--     script.on_nth_tick(shrink_start + (i * 5), function(event)
+--         if not player.valid then return end
+--         
+--         -- Sharper size reduction - from 1.5 down to 0.3
+--         local progress = i / 18  -- Normalized progress (0 to 1)
+--         local scale_factor = 1.5 - (progress * 1.2)  -- Shrink from 1.5 to 0.3
+--         -- Intensity decreases as we near the end
+--         local intensity_factor = 0.7 - (progress * 0.4)  -- Decrease from 0.7 to 0.3
+--         
+--         -- Draw dark background only during daytime
+--         if player.surface.darkness < 0.3 then
+--             rendering.draw_sprite{
+--                 sprite = "utility/entity_info_dark_background",
+--                 x_scale = scale_factor * 1.2,
+--                 y_scale = scale_factor * 1.2,
+--                 tint = {r = 1, g = 1, b = 1, a = 0.7},
+--                 render_layer = "ground-patch",
+--                 target = {x = landing_pos.x, y = landing_pos.y},
+--                 surface = player.surface,
+--                 time_to_live = 15
+--             }
+--         end
+--         
+--         -- Always add light effects
+--         rendering.draw_light{
+--             sprite = "utility/light_small",
+--             scale = scale_factor,
+--             intensity = intensity_factor,
+--             minimum_darkness = 0,
+--             color = {r = 1, g = 0.1, b = 0.1},
+--             target = {x = landing_pos.x, y = landing_pos.y},
+--             surface = player.surface,
+--             time_to_live = 15
+--         }
+--         
+--         -- Outer glow
+--         rendering.draw_light{
+--             sprite = "utility/light_small",
+--             scale = scale_factor * 1.3,
+--             intensity = intensity_factor * 0.8,
+--             minimum_darkness = 0,
+--             color = {r = 1, g = 0.3, b = 0.1},
+--             target = {x = landing_pos.x, y = landing_pos.y},
+--             surface = player.surface,
+--             time_to_live = 15
+--         }
+--     end)
+-- end
     
     -- Store quality itself directly instead of just the name
     local quality = nil

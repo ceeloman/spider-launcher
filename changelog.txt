@@ -1,7 +1,12 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.9.4
-Date: 2025-12-20
+Date: 2025-12-21
   Features:
+    - Automatic equipment grid initialization
+      - When opening container GUIs, all vehicle items in the inventory automatically get their equipment grids initialized
+      - Prevents issues where vehicles might not have grids set up when needed
+      - Only initializes grids for items that have equipment grid prototypes but don't have grids yet
+      - Scans all items in opened container inventories and creates grids for item-with-entity-data items with stack_size == 1
     - Remote Equipment grid management
       - Added button to automatically fill equipment grid ghosts from inventory when viewing vehicle equipment grids
       - Button appears when opening equipment grids for vehicles
@@ -18,11 +23,16 @@ Date: 2025-12-20
       - Shows "No equipment installed" message when grid is empty
       - Includes "Manage Equipment Grid" button to open the full equipment grid GUI for management
       - Equipment tab appears last in the tab order (after Utilities, Ammo, and Fuel)
+    - Always show extras panel with TFMG
+      - Extras panel now always displays when TFMG is active, regardless of whether items are available
+      - Allows access to equipment grid management even when no utilities, ammo, or fuel are available
+      - When TFMG is not active, extras panel only shows when items are available (original behavior)
     - Equipment grid GUI
       - Added cargo pod button to equipment grid toolbar
         - Opens orbital deployment menu directly from equipment grid GUI
         - Button appears alongside the equipment fill button
         - Automatically switches to planet surface when viewing from platform
+      - Quality compatibility functions correctly
       - Added equipment items toolbar
         - Separate toolbar below main buttons showing all equipment items from the same inventory as the vehicle
         - Lists equipment items vertically in a scrollable pane
@@ -31,10 +41,12 @@ Date: 2025-12-20
         - Supports quality-aware equipment items
       - Equipment removal functionality
         - Confirm button now removes equipment marked for removal/deconstruction
-        - Removed equipment is automatically returned to the container inventory
-        - Uses grid.take() API to properly remove equipment and convert back to items
-        - Preserves equipment quality when returning items to inventory
-        - Removal happens before ghost filling when clicking confirm
+      - Removed equipment is automatically returned to the container inventory
+      - Uses grid.take() API to properly remove equipment and convert back to items
+      - Preserves equipment quality when returning items to inventory
+      - Removal happens before ghost filling when clicking confirm
+  Bug fixes:
+    - Commented out deployment animations due to inconsistencies with planet surface cargo pod descending animation speeds
 ---------------------------------------------------------------------------------------------------
 Version: 2.9.3
 Date: 2025-12-18

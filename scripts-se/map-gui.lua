@@ -645,6 +645,27 @@ function map_gui.show_deployment_menu(player, vehicles)
         }
         button_flow.style.horizontal_align = "right"
         
+        -- Check if vehicle has equipment grid and TFMG is active
+        local has_equipment_grid = false
+        local is_tfmg_active = script.active_mods["TFMG"] ~= nil or script.active_mods["tfmg"] ~= nil
+        if is_tfmg_active then
+            local entity_prototype = prototypes.entity[vehicle.entity_name]
+            if entity_prototype and entity_prototype.grid_prototype then
+                has_equipment_grid = true
+            end
+        end
+        
+        -- Add edit equipment grid button if vehicle has equipment grid
+        if has_equipment_grid then
+            local edit_grid_button = button_flow.add{
+                type = "sprite-button",
+                name = "edit_equipment_grid_" .. i,
+                sprite = "utility/empty_armor_slot",
+                tooltip = "Edit Equipment Grid"
+            }
+            edit_grid_button.style.size = 28
+        end
+        
         -- Check if in map view (chart or zoomed-in chart)
         local in_map_view = player.render_mode == defines.render_mode.chart or 
                            player.render_mode == defines.render_mode.chart_zoomed_in
@@ -1574,6 +1595,75 @@ function map_gui.on_gui_click(event)
         --log("[SE] Close deployment menu button clicked")
         if player.gui.screen["spidertron_deployment_frame"] then
             player.gui.screen["spidertron_deployment_frame"].destroy()
+        end
+        return
+    end
+
+    -- Edit equipment grid button
+    local edit_grid_index_str = string.match(element.name, "^edit_equipment_grid_(%d+)$")
+    if edit_grid_index_str then
+        local index = tonumber(edit_grid_index_str)
+        if storage.spidertrons and storage.spidertrons[index] then
+            local vehicle = storage.spidertrons[index]
+            
+            -- Store vehicle data for reopening deployment menu later
+            storage.current_equipment_grid_vehicle = vehicle
+            
+            -- Get the vehicle stack from the hub inventory
+            local hub = vehicle.hub
+            if not hub or not hub.valid then
+                return
+            end
+            
+            local inv_type = vehicle.inv_type or defines.inventory.chest
+            local hub_inventory = hub.get_inventory(inv_type)
+            if not hub_inventory then
+                return
+            end
+            
+            local vehicle_stack = hub_inventory[vehicle.inventory_slot]
+            if not vehicle_stack then
+                return
+            end
+            if not vehicle_stack.valid_for_read then
+                return
+            end
+            
+            -- Close the deployment menu first
+            if player.gui.screen["spidertron_deployment_frame"] then
+                player.gui.screen["spidertron_deployment_frame"].destroy()
+            end
+            
+            -- Get or create the equipment grid
+            local grid = vehicle_stack.grid
+            if not grid then
+                local success, created_grid = pcall(function()
+                    return vehicle_stack.create_grid()
+                end)
+                if success and created_grid then
+                    grid = created_grid
+                else
+                    player.print("Error: Failed to create equipment grid")
+                    return
+                end
+            end
+            
+            -- Verify grid is valid before opening
+            if not grid or not grid.valid then
+                player.print("Error: Grid is invalid")
+                return
+            end
+            
+            -- Open the equipment grid GUI
+            player.opened = grid
+            
+            -- Check what player.opened actually is
+            local opened = player.opened
+            
+            -- If opening grid directly didn't work, try opening the item stack instead
+            if not opened or opened ~= grid then
+                player.opened = vehicle_stack
+            end
         end
         return
     end

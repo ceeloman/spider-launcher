@@ -448,11 +448,10 @@ function map_gui.show_deployment_menu(player, vehicles)
         
         -- Check if vehicle has equipment grid and TFMG is active
         local has_equipment_grid = false
-        if api and api.is_tfmg_active() then
-            local entity_prototype = prototypes.entity[vehicle.entity_name]
-            if entity_prototype and entity_prototype.grid_prototype then
-                has_equipment_grid = true
-            end
+
+        local entity_prototype = prototypes.entity[vehicle.entity_name]
+        if entity_prototype and entity_prototype.grid_prototype then
+            has_equipment_grid = true
         end
         
         -- Add edit equipment grid button if vehicle has equipment grid
@@ -855,7 +854,10 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     
     -- game.print("[DEBUG] any_items_available = " .. tostring(any_items_available))
     
-    if not any_items_available then
+    -- Check if TFMG is active - if so, always show extras panel
+    local is_tfmg_active = api and api.is_tfmg_active() or false
+    
+    if not any_items_available and not is_tfmg_active then
         -- game.print("[DEBUG] No items available - deploying immediately without extras menu")
         if player.gui.screen["spidertron_deployment_frame"] then
             player.gui.screen["spidertron_deployment_frame"].destroy()
@@ -1970,7 +1972,7 @@ end
 function map_gui.initialize_player_shortcuts(player)
     
     -- Check if TFMG mod is active
-    local is_tfmg_active = api.is_tfmg_active()
+    local is_tfmg_active = api and api.is_tfmg_active() or false
     
     -- Check if any spider-vehicle types exist in the game
     if not vehicles_list.spider_vehicles then

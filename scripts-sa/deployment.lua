@@ -431,108 +431,108 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     end
 
     -- Define the delay before the target appears
-    local delay_ticks = 60 * 9
-    local starting_tick = game.tick
+    -- local delay_ticks = 60 * 9
+    -- local starting_tick = game.tick
 
     -- Wait for 9 seconds before starting the light sequence
-    local sequence_start = starting_tick + delay_ticks
-    local total_animation_ticks = 60 * 8.5
-    local grow_duration_ticks = 60 * 7
-    local shrink_duration_ticks = total_animation_ticks - grow_duration_ticks
+    -- local sequence_start = starting_tick + delay_ticks
+    -- local total_animation_ticks = 60 * 8.5
+    -- local grow_duration_ticks = 60 * 7
+    -- local shrink_duration_ticks = total_animation_ticks - grow_duration_ticks
 
     -- Grow phase - gradually increase size over 7 seconds
-    for i = 0, 84 do
-        script.on_nth_tick(sequence_start + (i * 5), function(event)
-            if not player.valid then return end
-            
-            local progress = i / 84
-            local scale_factor = 0.3 + (progress * 1.2)
-            local intensity_factor = 0.3 + (progress * 0.4)
-            
-            if player.surface.darkness < 0.3 then
-                rendering.draw_sprite{
-                    sprite = "utility/entity_info_dark_background",
-                    x_scale = scale_factor * 1.2,
-                    y_scale = scale_factor * 1.2,
-                    tint = {r = 1, g = 1, b = 1, a = 0.7},
-                    render_layer = "ground-patch",
-                    target = {x = landing_pos.x, y = landing_pos.y},
-                    surface = player.surface,
-                    time_to_live = 15
-                }
-            end
-            
-            rendering.draw_light{
-                sprite = "utility/light_small",
-                scale = scale_factor,
-                intensity = intensity_factor,
-                minimum_darkness = 0,
-                color = {r = 1, g = 0.1, b = 0.1},
-                target = {x = landing_pos.x, y = landing_pos.y},
-                surface = player.surface,
-                time_to_live = 15
-            }
-            
-            rendering.draw_light{
-                sprite = "utility/light_small",
-                scale = scale_factor * 1.3,
-                intensity = intensity_factor * 0.7,
-                minimum_darkness = 0,
-                color = {r = 1, g = 0.3, b = 0.1},
-                target = {x = landing_pos.x, y = landing_pos.y},
-                surface = player.surface,
-                time_to_live = 15
-            }
-        end)
-    end
+    -- for i = 0, 84 do
+    --     script.on_nth_tick(sequence_start + (i * 5), function(event)
+    --         if not player.valid then return end
+    --         
+    --         local progress = i / 84
+    --         local scale_factor = 0.3 + (progress * 1.2)
+    --         local intensity_factor = 0.3 + (progress * 0.4)
+    --         
+    --         if player.surface.darkness < 0.3 then
+    --             rendering.draw_sprite{
+    --                 sprite = "utility/entity_info_dark_background",
+    --                 x_scale = scale_factor * 1.2,
+    --                 y_scale = scale_factor * 1.2,
+    --                 tint = {r = 1, g = 1, b = 1, a = 0.7},
+    --                 render_layer = "ground-patch",
+    --                 target = {x = landing_pos.x, y = landing_pos.y},
+    --                 surface = player.surface,
+    --                 time_to_live = 15
+    --             }
+    --         end
+    --         
+    --         rendering.draw_light{
+    --             sprite = "utility/light_small",
+    --             scale = scale_factor,
+    --             intensity = intensity_factor,
+    --             minimum_darkness = 0,
+    --             color = {r = 1, g = 0.1, b = 0.1},
+    --             target = {x = landing_pos.x, y = landing_pos.y},
+    --             surface = player.surface,
+    --             time_to_live = 15
+    --         }
+    --         
+    --         rendering.draw_light{
+    --             sprite = "utility/light_small",
+    --             scale = scale_factor * 1.3,
+    --             intensity = intensity_factor * 0.7,
+    --             minimum_darkness = 0,
+    --             color = {r = 1, g = 0.3, b = 0.1},
+    --             target = {x = landing_pos.x, y = landing_pos.y},
+    --             surface = player.surface,
+    --             time_to_live = 15
+    --         }
+    --     end)
+    -- end
 
     -- Shrinking phase
-    local shrink_start = sequence_start + grow_duration_ticks
+    -- local shrink_start = sequence_start + grow_duration_ticks
 
-    for i = 0, 18 do
-        script.on_nth_tick(shrink_start + (i * 5), function(event)
-            if not player.valid then return end
-            
-            local progress = i / 18
-            local scale_factor = 1.5 - (progress * 1.2)
-            local intensity_factor = 0.7 - (progress * 0.4)
-            
-            if player.surface.darkness < 0.3 then
-                rendering.draw_sprite{
-                    sprite = "utility/entity_info_dark_background",
-                    x_scale = scale_factor * 1.2,
-                    y_scale = scale_factor * 1.2,
-                    tint = {r = 1, g = 1, b = 1, a = 0.7},
-                    render_layer = "ground-patch",
-                    target = {x = landing_pos.x, y = landing_pos.y},
-                    surface = player.surface,
-                    time_to_live = 15
-                }
-            end
-            
-            rendering.draw_light{
-                sprite = "utility/light_small",
-                scale = scale_factor,
-                intensity = intensity_factor,
-                minimum_darkness = 0,
-                color = {r = 1, g = 0.1, b = 0.1},
-                target = {x = landing_pos.x, y = landing_pos.y},
-                surface = player.surface,
-                time_to_live = 15
-            }
-            
-            rendering.draw_light{
-                sprite = "utility/light_small",
-                scale = scale_factor * 1.3,
-                intensity = intensity_factor * 0.8,
-                minimum_darkness = 0,
-                color = {r = 1, g = 0.3, b = 0.1},
-                target = {x = landing_pos.x, y = landing_pos.y},
-                surface = player.surface,
-                time_to_live = 15
-            }
-        end)
-    end
+    -- for i = 0, 18 do
+    --     script.on_nth_tick(shrink_start + (i * 5), function(event)
+    --         if not player.valid then return end
+    --         
+    --         local progress = i / 18
+    --         local scale_factor = 1.5 - (progress * 1.2)
+    --         local intensity_factor = 0.7 - (progress * 0.4)
+    --         
+    --         if player.surface.darkness < 0.3 then
+    --             rendering.draw_sprite{
+    --                 sprite = "utility/entity_info_dark_background",
+    --                 x_scale = scale_factor * 1.2,
+    --                 y_scale = scale_factor * 1.2,
+    --                 tint = {r = 1, g = 1, b = 1, a = 0.7},
+    --                 render_layer = "ground-patch",
+    --                 target = {x = landing_pos.x, y = landing_pos.y},
+    --                 surface = player.surface,
+    --                 time_to_live = 15
+    --             }
+    --         end
+    --         
+    --         rendering.draw_light{
+    --             sprite = "utility/light_small",
+    --             scale = scale_factor,
+    --             intensity = intensity_factor,
+    --             minimum_darkness = 0,
+    --             color = {r = 1, g = 0.1, b = 0.1},
+    --             target = {x = landing_pos.x, y = landing_pos.y},
+    --             surface = player.surface,
+    --             time_to_live = 15
+    --         }
+    --         
+    --         rendering.draw_light{
+    --             sprite = "utility/light_small",
+    --             scale = scale_factor * 1.3,
+    --             intensity = intensity_factor * 0.8,
+    --             minimum_darkness = 0,
+    --             color = {r = 1, g = 0.3, b = 0.1},
+    --             target = {x = landing_pos.x, y = landing_pos.y},
+    --             surface = player.surface,
+    --             time_to_live = 15
+    --         }
+    --     end)
+    -- end
     
     -- Store quality itself directly instead of just the name
     local quality = nil

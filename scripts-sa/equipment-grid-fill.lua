@@ -170,12 +170,19 @@ function equipment_grid_fill.get_ghost_equipment(grid)
         end
         
         if is_ghost and base_equipment_name then
+            -- Get quality directly from equipment object (it's a LuaQualityPrototype/userdata)
+            -- Store the quality object directly - don't try to extract the name here
+            local ghost_quality = nil
+            if equipment.quality then
+                ghost_quality = equipment.quality
+            end
+            
             table.insert(ghosts, {
                 ghost_name = equipment.name,
                 base_equipment_name = base_equipment_name,
                 position = {x = equipment.position.x, y = equipment.position.y},
                 equipment = equipment,
-                quality = equipment.quality
+                quality = ghost_quality  -- Store the quality object directly (userdata)
             })
         end
     end
@@ -227,19 +234,30 @@ function equipment_grid_fill.find_matching_items(inventory, ghosts)
                     local quality_match = true
                     local ghost_data = needed_equipment[result_equipment_name]
                     if ghost_data.quality then
-                        local stack_quality = "Normal"
+                        -- Extract stack quality name
+                        local stack_quality = "normal"
                         if stack.quality then
-                            stack_quality = stack.quality.name
+                            local success, name = pcall(function()
+                                return stack.quality.name
+                            end)
+                            if success and name then
+                                stack_quality = string.lower(name)
+                            elseif type(stack.quality) == "string" then
+                                stack_quality = string.lower(stack.quality)
+                            end
                         end
-                        local ghost_quality_name = "Normal"
-                        if type(ghost_data.quality) == "table" and ghost_data.quality.name then
-                            ghost_quality_name = ghost_data.quality.name
+                        
+                        -- Extract ghost quality name (use pcall for userdata)
+                        local ghost_quality_name = "normal"
+                        local success, name = pcall(function()
+                            return ghost_data.quality.name
+                        end)
+                        if success and name then
+                            ghost_quality_name = string.lower(name)
                         elseif type(ghost_data.quality) == "string" then
-                            ghost_quality_name = ghost_data.quality
+                            ghost_quality_name = string.lower(ghost_data.quality)
                         end
-                        -- Normalize quality names for comparison (case-insensitive)
-                        stack_quality = string.lower(stack_quality)
-                        ghost_quality_name = string.lower(ghost_quality_name)
+                        
                         quality_match = (stack_quality == ghost_quality_name)
                     end
                     
@@ -322,6 +340,158 @@ function equipment_grid_fill.find_all_equipment_items(inventory)
     return equipment_items
 end
 
+-- Add this helper function before get_or_create_fill_button
+local function create_equipment_toolbar_content(equipment_table, equipment_items, gui_type, relative_gui)
+    -- Group equipment by equipment_name, then sort by quality level
+    local equipment_groups = {}
+    for _, item_data in ipairs(equipment_items) do
+        local equipment_name = item_data.equipment_name
+        if not equipment_groups[equipment_name] then
+            equipment_groups[equipment_name] = {}
+        end
+        table.insert(equipment_groups[equipment_name], item_data)
+    end
+    
+    -- Sort each group by quality level (normal first, then increasing)
+    local function get_quality_level(quality)
+        if not quality then
+            return 0  -- Normal quality
+        end
+        if type(quality) == "table" and quality.level then
+            return quality.level
+        end
+        return 0  -- Default to normal
+    end
+    
+    local function sort_by_quality(a, b)
+        local level_a = get_quality_level(a.quality)
+        local level_b = get_quality_level(b.quality)
+        return level_a < level_b
+    end
+    
+    -- Sort equipment names for consistent ordering
+    local sorted_equipment_names = {}
+    for equipment_name, _ in pairs(equipment_groups) do
+        table.insert(sorted_equipment_names, equipment_name)
+    end
+    table.sort(sorted_equipment_names)
+    
+    -- Calculate max items per row for table column count
+    local max_items_per_row = 0
+    for _, equipment_name in ipairs(sorted_equipment_names) do
+        local group = equipment_groups[equipment_name]
+        if #group > max_items_per_row then
+            max_items_per_row = #group
+        end
+    end
+    
+    -- Create a row for each equipment type
+    for _, equipment_name in ipairs(sorted_equipment_names) do
+        local group = equipment_groups[equipment_name]
+        table.sort(group, sort_by_quality)
+        
+        -- Add buttons for each quality variant in this row
+        for idx, item_data in ipairs(group) do
+            local item_prototype = prototypes.item[item_data.item_name]
+            
+            if item_prototype then
+                local icon_sprite = "item/" .. item_data.item_name
+                
+                local tooltip_text = item_prototype.localised_name or item_data.item_name
+                if item_data.count > 1 then
+                    tooltip_text = {"", tooltip_text, " - ", item_data.count, "x"}
+                end
+                
+                local quality_suffix = "normal"
+                if item_data.quality then
+                    quality_suffix = item_data.quality.name or "normal"
+                end
+                local button_name = equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME .. "_" .. item_data.equipment_name .. "_" .. quality_suffix
+                
+                local quality_name_for_tag = "Normal"
+                local quality_name_lower = "normal"
+                
+                if item_data.quality then
+                    local success, name = pcall(function()
+                        return item_data.quality.name
+                    end)
+                    
+                    if success and name then
+                        quality_name_for_tag = name
+                        quality_name_lower = string.lower(name)
+                    elseif type(item_data.quality) == "string" then
+                        quality_name_for_tag = item_data.quality
+                        quality_name_lower = string.lower(item_data.quality)
+                    end
+                end
+                
+                local is_last_column = (idx == max_items_per_row)
+
+                local icon_container = equipment_table.add{
+                    type = "flow"
+                }
+                icon_container.style.width = 40
+                icon_container.style.height = 40
+                icon_container.style.padding = 0
+                icon_container.style.margin = 0
+                icon_container.style.horizontally_stretchable = false
+                icon_container.style.vertically_stretchable = false
+
+                if is_last_column and quality_name_lower ~= "normal" then
+                    icon_container.style.right_margin = 14
+                end
+                
+                local equipment_button = icon_container.add{
+                    type = "sprite-button",
+                    name = button_name,
+                    sprite = icon_sprite,
+                    tooltip = tooltip_text,
+                    enabled = true,
+                    tags = {
+                        equipment_name = item_data.equipment_name,
+                        item_name = item_data.item_name,
+                        inventory_index = item_data.index,
+                        quality = item_data.quality,
+                        quality_name = quality_name_for_tag
+                    }
+                }
+                equipment_button.style.size = 40
+                equipment_button.style.padding = 0
+                equipment_button.style.margin = 0
+
+                if quality_name_lower ~= "normal" then
+                    local overlay_name = "sl-" .. quality_name_lower
+                    
+                    local success, quality_overlay = pcall(function()
+                        return icon_container.add{
+                            type = "sprite",
+                            sprite = overlay_name,
+                            tooltip = quality_name_for_tag .. " quality"
+                        }
+                    end)
+                    
+                    if success and quality_overlay then
+                        quality_overlay.style.size = 14
+                        quality_overlay.style.top_padding = 23
+                        quality_overlay.style.left_padding = -40
+                    end
+                end
+            end
+        end
+
+        local items_in_row = #group
+        if items_in_row < max_items_per_row then
+            for i = items_in_row + 1, max_items_per_row do
+                equipment_table.add{
+                    type = "empty-widget"
+                }
+            end
+        end
+    end
+    
+    return max_items_per_row
+end
+
 -- Get or create the fill button for equipment grid GUI
 function equipment_grid_fill.get_or_create_fill_button(player)
     -- game.print("[EQUIP FILL] get_or_create_fill_button called")
@@ -369,10 +539,254 @@ function equipment_grid_fill.get_or_create_fill_button(player)
         return nil
     end
     
+    -- Find all equipment items in the inventory (needed for both new and existing buttons)
+    local equipment_items = equipment_grid_fill.find_all_equipment_items(target_inventory)
+    
     -- Check if button already exists
     local button = relative_gui[equipment_grid_fill.BUTTON_NAME]
     if button and button.valid then
-        -- game.print("[EQUIP FILL] Button already exists")
+        -- Button exists - refresh equipment toolbar if needed
+        local equipment_toolbar = relative_gui[equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME]
+        if equipment_toolbar and equipment_toolbar.valid then
+            -- Toolbar exists, destroy it so it can be recreated with updated counts
+            equipment_toolbar.destroy()
+        end
+        
+        -- Recreate equipment toolbar if we have equipment items
+        if #equipment_items > 0 then
+            -- Reuse the gui_type detection from earlier in the function
+            local gui_type = nil
+            local gui_type_names = {
+                "equipment_grid_gui",
+                "equipment_gui",
+                "grid_gui"
+            }
+            
+            for _, name in ipairs(gui_type_names) do
+                if defines.relative_gui_type[name] then
+                    gui_type = defines.relative_gui_type[name]
+                    break
+                end
+            end
+            
+            -- Create equipment toolbar (same code as below, but extracted for reuse)
+            local equipment_anchor = nil
+            if gui_type then
+                equipment_anchor = {
+                    gui = gui_type,
+                    position = defines.relative_gui_position.right
+                }
+            end
+            
+            local equipment_frame_config = {
+                type = "frame",
+                name = equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME,
+                style = "frame"
+            }
+            
+            if equipment_anchor then
+                equipment_frame_config.anchor = equipment_anchor
+            end
+            
+            local success_equip, equipment_toolbar_frame = pcall(function()
+                return relative_gui.add(equipment_frame_config)
+            end)
+            
+            if not success_equip or not equipment_toolbar_frame then
+                equipment_frame_config.anchor = nil
+                success_equip, equipment_toolbar_frame = pcall(function()
+                    return relative_gui.add(equipment_frame_config)
+                end)
+            end
+            
+            if success_equip and equipment_toolbar_frame then
+                -- Apply style modifications
+                equipment_toolbar_frame.style.horizontally_stretchable = false
+                equipment_toolbar_frame.style.vertically_stretchable = false
+                equipment_toolbar_frame.style.top_padding = 6
+                equipment_toolbar_frame.style.bottom_padding = 6
+                equipment_toolbar_frame.style.left_padding = 6
+                equipment_toolbar_frame.style.right_padding = 6
+                
+                -- Create button_frame for equipment
+                local equipment_button_frame = equipment_toolbar_frame.add{
+                    type = "frame",
+                    name = "button_frame",
+                    direction = "vertical",
+                    style = "inside_shallow_frame"
+                }
+                
+                equipment_button_frame.style.vertically_stretchable = false
+                
+                -- Create scroll pane for equipment items
+                local equipment_scroll = equipment_button_frame.add{
+                    type = "scroll-pane",
+                    name = "equipment_scroll",
+                    horizontal_scroll_policy = "auto",
+                    vertical_scroll_policy = "auto"
+                }
+                equipment_scroll.style.maximal_height = 300
+                equipment_scroll.style.minimal_width = 20
+                equipment_scroll.style.maximal_width = 200
+                
+                -- Group equipment by equipment_name, then sort by quality level
+                local equipment_groups = {}
+                for _, item_data in ipairs(equipment_items) do
+                    local equipment_name = item_data.equipment_name
+                    if not equipment_groups[equipment_name] then
+                        equipment_groups[equipment_name] = {}
+                    end
+                    table.insert(equipment_groups[equipment_name], item_data)
+                end
+                
+                -- Sort each group by quality level (normal first, then increasing)
+                local function get_quality_level(quality)
+                    if not quality then
+                        return 0  -- Normal quality
+                    end
+                    if type(quality) == "table" and quality.level then
+                        return quality.level
+                    end
+                    return 0  -- Default to normal
+                end
+                
+                local function sort_by_quality(a, b)
+                    local level_a = get_quality_level(a.quality)
+                    local level_b = get_quality_level(b.quality)
+                    return level_a < level_b
+                end
+                
+                -- Sort equipment names for consistent ordering
+                local sorted_equipment_names = {}
+                for equipment_name, _ in pairs(equipment_groups) do
+                    table.insert(sorted_equipment_names, equipment_name)
+                end
+                table.sort(sorted_equipment_names)
+                
+                -- Calculate max items per row for table column count
+                local max_items_per_row = 0
+                for _, equipment_name in ipairs(sorted_equipment_names) do
+                    local group = equipment_groups[equipment_name]
+                    if #group > max_items_per_row then
+                        max_items_per_row = #group
+                    end
+                end
+                equipment_scroll.style.maximal_width = 220
+
+                -- Create table with filter_slot_table style for grid background
+                local equipment_table = equipment_scroll.add{
+                    type = "table",
+                    name = "equipment_table",
+                    column_count = max_items_per_row,
+                    style = "filter_slot_table"
+                }
+
+                -- Create a row for each equipment type
+                for _, equipment_name in ipairs(sorted_equipment_names) do
+                    local group = equipment_groups[equipment_name]
+                    table.sort(group, sort_by_quality)
+                    
+                    -- Add buttons for each quality variant in this row
+                    for idx, item_data in ipairs(group) do
+                        local item_prototype = prototypes.item[item_data.item_name]
+                        
+                        if item_prototype then
+                            local icon_sprite = "item/" .. item_data.item_name
+                            
+                            local tooltip_text = item_prototype.localised_name or item_data.item_name
+                            if item_data.count > 1 then
+                                tooltip_text = {"", tooltip_text, " - ", item_data.count, "x"}
+                            end
+                            
+                            local quality_suffix = "normal"
+                            if item_data.quality then
+                                quality_suffix = item_data.quality.name or "normal"
+                            end
+                            local button_name = equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME .. "_" .. item_data.equipment_name .. "_" .. quality_suffix
+                            
+                            local quality_name_for_tag = "Normal"
+                            local quality_name_lower = "normal"
+                            
+                            if item_data.quality then
+                                local success, name = pcall(function()
+                                    return item_data.quality.name
+                                end)
+                                
+                                if success and name then
+                                    quality_name_for_tag = name
+                                    quality_name_lower = string.lower(name)
+                                elseif type(item_data.quality) == "string" then
+                                    quality_name_for_tag = item_data.quality
+                                    quality_name_lower = string.lower(item_data.quality)
+                                end
+                            end
+                            
+                            local is_last_column = (idx == max_items_per_row)
+
+                            local icon_container = equipment_table.add{
+                                type = "flow"
+                            }
+                            icon_container.style.width = 40
+                            icon_container.style.height = 40
+                            icon_container.style.padding = 0
+                            icon_container.style.margin = 0
+                            icon_container.style.horizontally_stretchable = false
+                            icon_container.style.vertically_stretchable = false
+
+                            if is_last_column and quality_name_lower ~= "normal" then
+                                icon_container.style.right_margin = 14
+                            end
+                            
+                            local equipment_button = icon_container.add{
+                                type = "sprite-button",
+                                name = button_name,
+                                sprite = icon_sprite,
+                                tooltip = tooltip_text,
+                                enabled = true,
+                                tags = {
+                                    equipment_name = item_data.equipment_name,
+                                    item_name = item_data.item_name,
+                                    inventory_index = item_data.index,
+                                    quality = item_data.quality,
+                                    quality_name = quality_name_for_tag
+                                }
+                            }
+                            equipment_button.style.size = 40
+                            equipment_button.style.padding = 0
+                            equipment_button.style.margin = 0
+
+                            if quality_name_lower ~= "normal" then
+                                local overlay_name = "sl-" .. quality_name_lower
+                                
+                                local success, quality_overlay = pcall(function()
+                                    return icon_container.add{
+                                        type = "sprite",
+                                        sprite = overlay_name,
+                                        tooltip = quality_name_for_tag .. " quality"
+                                    }
+                                end)
+                                
+                                if success and quality_overlay then
+                                    quality_overlay.style.size = 14
+                                    quality_overlay.style.top_padding = 23
+                                    quality_overlay.style.left_padding = -40
+                                end
+                            end
+                        end
+                    end
+
+                    local items_in_row = #group
+                    if items_in_row < max_items_per_row then
+                        for i = items_in_row + 1, max_items_per_row do
+                            equipment_table.add{
+                                type = "empty-widget"
+                            }
+                        end
+                    end
+                end
+            end
+        end
+        
         return button
     end
     -- game.print("[EQUIP FILL] Creating new button")
@@ -448,7 +862,7 @@ function equipment_grid_fill.get_or_create_fill_button(player)
     -- Apply style modifications
     toolbar_frame.style.horizontally_stretchable = false
     toolbar_frame.style.vertically_stretchable = false
-    toolbar_frame.style.top_padding = 3
+    toolbar_frame.style.top_padding = 6
     toolbar_frame.style.bottom_padding = 6
     toolbar_frame.style.left_padding = 6
     toolbar_frame.style.right_padding = 6
@@ -486,7 +900,7 @@ function equipment_grid_fill.get_or_create_fill_button(player)
     elseif #ghosts > 0 then
         tooltip_text = {"", "No matching equipment items in inventory (", #ghosts, " ghost(s) need filling)"}
     else
-        tooltip_text = "Fill equipment ghosts from inventory"
+        tooltip_text = "Confirm Equipment Loadout"
     end
     
     local fill_button = button_flow.add{
@@ -550,7 +964,7 @@ function equipment_grid_fill.get_or_create_fill_button(player)
             -- Apply style modifications
             equipment_toolbar_frame.style.horizontally_stretchable = false
             equipment_toolbar_frame.style.vertically_stretchable = false
-            equipment_toolbar_frame.style.top_padding = 3
+            equipment_toolbar_frame.style.top_padding = 6
             equipment_toolbar_frame.style.bottom_padding = 6
             equipment_toolbar_frame.style.left_padding = 6
             equipment_toolbar_frame.style.right_padding = 6
@@ -572,61 +986,188 @@ function equipment_grid_fill.get_or_create_fill_button(player)
             local equipment_scroll = equipment_button_frame.add{
                 type = "scroll-pane",
                 name = "equipment_scroll",
-                horizontal_scroll_policy = "never",
+                horizontal_scroll_policy = "auto",
                 vertical_scroll_policy = "auto"
             }
+            -- Setting maximal_height and maximal_width with scroll_policy = "auto" means
+            -- the scroll-pane will only be scrollable when content exceeds these dimensions.
             equipment_scroll.style.maximal_height = 300
             equipment_scroll.style.minimal_width = 20
-            equipment_scroll.style.maximal_width = 64
+            equipment_scroll.style.maximal_width = 200
             
-            -- Create flow for equipment buttons (vertical layout)
-            local equipment_flow = equipment_scroll.add{
-                type = "flow",
-                name = "equipment_flow",
-                direction = "vertical"
-            }
-            equipment_flow.style.vertical_spacing = 2
-            
-            -- Add buttons for each equipment item
+            -- Group equipment by equipment_name, then sort by quality level
+            local equipment_groups = {}
             for _, item_data in ipairs(equipment_items) do
-                local item_prototype = prototypes.item[item_data.item_name]
-                
-                if item_prototype then
-                    -- Use item name as sprite - Factorio will resolve the icon automatically
-                    -- Format: "item/item-name" for item icons
-                    local icon_sprite = "item/" .. item_data.item_name
-                    
-                    -- Create tooltip with item name and count in "name - countx" format
-                    local tooltip_text = item_prototype.localised_name or item_data.item_name
-                    if item_data.count > 1 then
-                        tooltip_text = {"", tooltip_text, " - ", item_data.count, "x"}
-                    end
-                    
-                    -- Create unique button name with equipment name and quality
-                    local quality_suffix = "normal"
-                    if item_data.quality then
-                        quality_suffix = item_data.quality.name or "normal"
-                    end
-                    local button_name = equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME .. "_" .. item_data.equipment_name .. "_" .. quality_suffix
-                    
-                    local equipment_button = equipment_flow.add{
-                        type = "sprite-button",
-                        name = button_name,
-                        sprite = icon_sprite,
-                        style = "slot_sized_button",
-                        tooltip = tooltip_text,
-                        enabled = true,
-                        tags = {
-                            equipment_name = item_data.equipment_name,
-                            item_name = item_data.item_name,
-                            inventory_index = item_data.index,
-                            quality = item_data.quality
-                        }
-                    }
+                local equipment_name = item_data.equipment_name
+                if not equipment_groups[equipment_name] then
+                    equipment_groups[equipment_name] = {}
+                end
+                table.insert(equipment_groups[equipment_name], item_data)
+            end
+            
+            -- Sort each group by quality level (normal first, then increasing)
+            local function get_quality_level(quality)
+                if not quality then
+                    return 0  -- Normal quality
+                end
+                if type(quality) == "table" and quality.level then
+                    return quality.level
+                end
+                return 0  -- Default to normal
+            end
+            
+            local function sort_by_quality(a, b)
+                local level_a = get_quality_level(a.quality)
+                local level_b = get_quality_level(b.quality)
+                return level_a < level_b
+            end
+            
+            -- Sort equipment names for consistent ordering
+            local sorted_equipment_names = {}
+            for equipment_name, _ in pairs(equipment_groups) do
+                table.insert(sorted_equipment_names, equipment_name)
+            end
+            table.sort(sorted_equipment_names)
+            
+            -- Calculate max items per row for table column count
+            local max_items_per_row = 0
+            for _, equipment_name in ipairs(sorted_equipment_names) do
+                local group = equipment_groups[equipment_name]
+                if #group > max_items_per_row then
+                    max_items_per_row = #group
                 end
             end
+            -- Set maximal width - give plenty of room for overlays
+            equipment_scroll.style.maximal_width = 220
+
+            -- Create table with filter_slot_table style for grid background
+            -- We'll put flows (with sprite buttons) in the table cells
+            local equipment_table = equipment_scroll.add{
+                type = "table",
+                name = "equipment_table",
+                column_count = max_items_per_row,
+                style = "filter_slot_table"
+            }
+
+            -- Create a row for each equipment type
+            for _, equipment_name in ipairs(sorted_equipment_names) do
+                local group = equipment_groups[equipment_name]
+                table.sort(group, sort_by_quality)
+                
+
+                -- Add buttons for each quality variant in this row
+                for idx, item_data in ipairs(group) do
+                    local item_prototype = prototypes.item[item_data.item_name]
+                    
+                    if item_prototype then
+                        -- Use item name as sprite - Factorio will resolve the icon automatically
+                        -- Format: "item/item-name" for item icons
+                        local icon_sprite = "item/" .. item_data.item_name
+                        
+                        -- Create tooltip with item name and count in "name - countx" format
+                        local tooltip_text = item_prototype.localised_name or item_data.item_name
+                        if item_data.count > 1 then
+                            tooltip_text = {"", tooltip_text, " - ", item_data.count, "x"}
+                        end
+                        
+                        -- Create unique button name with equipment name and quality
+                        local quality_suffix = "normal"
+                        if item_data.quality then
+                            quality_suffix = item_data.quality.name or "normal"
+                        end
+                        local button_name = equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME .. "_" .. item_data.equipment_name .. "_" .. quality_suffix
+                        
+                        -- Store quality name for easier retrieval - DETERMINE THIS EARLY
+                        local quality_name_for_tag = "Normal"
+                        local quality_name_lower = "normal"
+                        
+                        if item_data.quality then
+                            -- Try to access .name property using pcall (works for userdata/LuaQualityPrototype)
+                            local success, name = pcall(function()
+                                return item_data.quality.name
+                            end)
+                            
+                            if success and name then
+                                quality_name_for_tag = name
+                                quality_name_lower = string.lower(name)
+                            elseif type(item_data.quality) == "string" then
+                                quality_name_for_tag = item_data.quality
+                                quality_name_lower = string.lower(item_data.quality)
+                            end
+                        end
+                        
+                        -- Determine if this is in the last column of the table (rightmost position)
+                        local is_last_column = (idx == max_items_per_row)
+
+                        -- Create icon container flow for sprite button with quality overlay (similar to map GUI)
+                        -- Add flow to table cell - the filter_slot_table style provides the grid background
+                        local icon_container = equipment_table.add{
+                            type = "flow"
+                        }
+                        icon_container.style.width = 40
+                        icon_container.style.height = 40
+                        icon_container.style.padding = 0
+                        icon_container.style.margin = 0
+                        icon_container.style.horizontally_stretchable = false
+                        icon_container.style.vertically_stretchable = false
+
+                        -- Add right margin ONLY to items in the last column (rightmost) if they have quality overlay
+                        if is_last_column and quality_name_lower ~= "normal" then
+                            icon_container.style.right_margin = 14
+                        end
+                        
+                        -- Add sprite button inside container (no style, just explicit size like map GUI)
+                        local equipment_button = icon_container.add{
+                            type = "sprite-button",
+                            name = button_name,
+                            sprite = icon_sprite,
+                            tooltip = tooltip_text,
+                            enabled = true,
+                            tags = {
+                                equipment_name = item_data.equipment_name,
+                                item_name = item_data.item_name,
+                                inventory_index = item_data.index,
+                                quality = item_data.quality,
+                                quality_name = quality_name_for_tag
+                            }
+                        }
+                        equipment_button.style.size = 40
+                        equipment_button.style.padding = 0
+                        equipment_button.style.margin = 0
+
+                        -- Add quality overlay if quality is not Normal
+                        if quality_name_lower ~= "normal" then
+                            local overlay_name = "sl-" .. quality_name_lower
+                            
+                            local success, quality_overlay = pcall(function()
+                                return icon_container.add{
+                                    type = "sprite",
+                                    sprite = overlay_name,
+                                    tooltip = quality_name_for_tag .. " quality"
+                                }
+                            end)
+                            
+                            if success and quality_overlay then
+                                quality_overlay.style.size = 14
+                                quality_overlay.style.top_padding = 23
+                                quality_overlay.style.left_padding = -40  -- Stay within button bounds for all items
+                            end
+                        end
+                    end  -- Close if item_prototype then
+                end  -- Close for idx, item_data in ipairs(group) do
+
+                -- Pad the row with empty cells if needed (to maintain grid structure)
+                local items_in_row = #group
+                if items_in_row < max_items_per_row then
+                    for i = items_in_row + 1, max_items_per_row do
+                        equipment_table.add{
+                            type = "empty-widget"
+                        }
+                    end
+                end
+            end  -- Close for _, equipment_name in ipairs(sorted_equipment_names) do
         end
-    end
+    end  -- Close if #equipment_items > 0 then
     
     return toolbar_frame
 end
@@ -637,184 +1178,36 @@ function equipment_grid_fill.refresh_equipment_toolbar(player)
         return
     end
     
+    -- Check if equipment grid is still open before refreshing
+    local grid, inventory, stack_index = equipment_grid_fill.get_equipment_grid_context(player)
+    if not grid or not grid.valid then
+        -- Grid is closed, don't refresh (toolbar will be removed by remove_fill_button)
+        return
+    end
+    
     local relative_gui = player.gui.relative
     if not relative_gui then
         return
     end
     
+    -- Store whether toolbar exists before destroying
     local equipment_toolbar = relative_gui[equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME]
-    if not equipment_toolbar or not equipment_toolbar.valid then
-        -- Toolbar doesn't exist, try to recreate it by calling get_or_create_fill_button
-        -- This will create the toolbar if there are equipment items in inventory
-        equipment_grid_fill.get_or_create_fill_button(player)
-        return
+    local toolbar_existed = equipment_toolbar and equipment_toolbar.valid
+    
+    -- Remove existing toolbar and recreate with new row-based structure
+    if toolbar_existed then
+        equipment_toolbar.destroy()
     end
     
-    -- Get the equipment grid context to find the inventory
-    local grid, inventory, stack_index = equipment_grid_fill.get_equipment_grid_context(player)
-    if not grid or not grid.valid or not inventory then
-        return
-    end
+    -- Recreate the toolbar with updated structure - this will always recreate if grid is open
+    local result = equipment_grid_fill.get_or_create_fill_button(player)
     
-    -- Find all equipment items in the inventory
-    local equipment_items = equipment_grid_fill.find_all_equipment_items(inventory)
-    
-    -- If no equipment items found, we're done (but toolbar structure should still exist)
-    if #equipment_items == 0 then
-        -- Remove all existing buttons since there are no items
-        local button_frame = equipment_toolbar["button_frame"]
-        if button_frame and button_frame.valid then
-            local equipment_scroll = button_frame["equipment_scroll"]
-            if equipment_scroll and equipment_scroll.valid then
-                local equipment_flow = equipment_scroll["equipment_flow"]
-                if equipment_flow and equipment_flow.valid then
-                    for _, child in pairs(equipment_flow.children) do
-                        if child.type == "sprite-button" then
-                            child.destroy()
-                        end
-                    end
-                end
-            end
-        end
-        return
-    end
-    
-    -- Create a map of equipment_name:quality -> item_data for quick lookup
-    local equipment_map = {}
-    for _, item_data in ipairs(equipment_items) do
-        local quality_suffix = "normal"
-        if item_data.quality then
-            if type(item_data.quality) == "table" and item_data.quality.name then
-                quality_suffix = string.lower(item_data.quality.name)
-            elseif type(item_data.quality) == "string" then
-                quality_suffix = string.lower(item_data.quality)
-            end
-        end
-        local key = item_data.equipment_name .. ":" .. quality_suffix
-        equipment_map[key] = item_data
-    end
-    
-    -- Find the equipment flow
-    local button_frame = equipment_toolbar["button_frame"]
-    if not button_frame or not button_frame.valid then
-        return
-    end
-    
-    local equipment_scroll = button_frame["equipment_scroll"]
-    if not equipment_scroll or not equipment_scroll.valid then
-        return
-    end
-    
-    local equipment_flow = equipment_scroll["equipment_flow"]
-    if not equipment_flow or not equipment_flow.valid then
-        return
-    end
-    
-    -- Track which buttons already exist
-    -- First, collect all existing buttons without modifying them
-    local existing_buttons = {}
-    local buttons_to_remove = {}
-    for _, child in pairs(equipment_flow.children) do
-        if child.type == "sprite-button" and child.tags then
-            local equipment_name = child.tags.equipment_name
-            local quality = child.tags.quality
-            local quality_suffix = "normal"
-            if quality then
-                if type(quality) == "table" and quality.name then
-                    quality_suffix = string.lower(quality.name)
-                elseif type(quality) == "string" then
-                    quality_suffix = string.lower(quality)
-                end
-            else
-                quality_suffix = "normal"
-            end
-            
-            local key = equipment_name .. ":" .. quality_suffix
-            existing_buttons[key] = child
-            
-            local item_data = equipment_map[key]
-            
-            if item_data then
-                -- Update existing button tooltip
-                local item_prototype = prototypes.item[item_data.item_name]
-                if item_prototype then
-                    local tooltip_text = item_prototype.localised_name or item_data.item_name
-                    if item_data.count > 1 then
-                        tooltip_text = {"", tooltip_text, " - ", item_data.count, "x"}
-                    end
-                    child.tooltip = tooltip_text
-                end
-            else
-                -- Item no longer in inventory, mark for removal
-                table.insert(buttons_to_remove, child)
-            end
-        end
-    end
-    
-    -- Remove buttons that are no longer needed (do this after iteration to avoid issues)
-    for _, button in ipairs(buttons_to_remove) do
-        if button.valid then
-            button.destroy()
-        end
-    end
-    
-    -- Verify equipment_flow is still valid after removing buttons
-    if not equipment_flow.valid then
-        return
-    end
-    
-    -- Add new buttons for items that don't have buttons yet
-    for _, item_data in ipairs(equipment_items) do
-        local quality_suffix = "normal"
-        if item_data.quality then
-            if type(item_data.quality) == "table" and item_data.quality.name then
-                quality_suffix = string.lower(item_data.quality.name)
-            elseif type(item_data.quality) == "string" then
-                quality_suffix = string.lower(item_data.quality)
-            end
-        end
-        local key = item_data.equipment_name .. ":" .. quality_suffix
-        
-        if not existing_buttons[key] then
-            -- This item doesn't have a button yet, create one
-            local item_prototype = prototypes.item[item_data.item_name]
-            if item_prototype then
-                -- Verify equipment_flow is still valid before adding
-                if not equipment_flow.valid then
-                    return
-                end
-                
-                local icon_sprite = "item/" .. item_data.item_name
-                local tooltip_text = item_prototype.localised_name or item_data.item_name
-                if item_data.count > 1 then
-                    tooltip_text = {"", tooltip_text, " - ", item_data.count, "x"}
-                end
-                
-                local button_name = equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME .. "_" .. item_data.equipment_name .. "_" .. quality_suffix
-                
-                local success, equipment_button = pcall(function()
-                    return equipment_flow.add{
-                        type = "sprite-button",
-                        name = button_name,
-                        sprite = icon_sprite,
-                        style = "slot_sized_button",
-                        tooltip = tooltip_text,
-                        enabled = true,
-                        tags = {
-                            equipment_name = item_data.equipment_name,
-                            item_name = item_data.item_name,
-                            inventory_index = item_data.index,
-                            quality = item_data.quality
-                        }
-                    }
-                end)
-                
-                if not success then
-                    -- If adding button failed, try recreating the toolbar
-                    equipment_grid_fill.get_or_create_fill_button(player)
-                    return
-                end
-            end
+    -- If toolbar existed but wasn't recreated, something went wrong - try again
+    if toolbar_existed and result then
+        local new_toolbar = relative_gui[equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME]
+        if not new_toolbar or not new_toolbar.valid then
+            -- Toolbar wasn't recreated, try one more time
+            equipment_grid_fill.get_or_create_fill_button(player)
         end
     end
 end
@@ -1015,153 +1408,174 @@ function equipment_grid_fill.on_fill_button_click(player)
     end
     
     -- Get ghost equipment (validate on click)
-    -- game.print("[EQUIP FILL CLICK] Getting ghost equipment...")
     local ghosts = equipment_grid_fill.get_ghost_equipment(grid)
-    -- game.print("[EQUIP FILL CLICK] Found " .. #ghosts .. " ghost equipment")
+    
     if #ghosts == 0 then
-        -- game.print("[EQUIP FILL CLICK] No ghost equipment found")
         if removed_count > 0 then
-            --player.print("Removed " .. removed_count .. " equipment item(s) and returned to inventory")
             -- Refresh toolbar since items were added back to inventory
             equipment_grid_fill.refresh_equipment_toolbar(player)
         end
         return
     end
     
-    -- Find matching items (validate on click)
-    -- game.print("[EQUIP FILL CLICK] Finding matching items...")
-    local matches = equipment_grid_fill.find_matching_items(target_inventory, ghosts)
-    if not matches or next(matches) == nil then
-        -- game.print("[EQUIP FILL CLICK] No matching items found")
-        if removed_count > 0 then
-            --player.print("Removed " .. removed_count .. " equipment item(s). No matching equipment items found in inventory for ghosts.")
-            -- Refresh toolbar since items were added back to inventory
-            equipment_grid_fill.refresh_equipment_toolbar(player)
-        else
-            player.print("No matching equipment items found in inventory")
-        end
-        return
-    end
-    -- game.print("[EQUIP FILL CLICK] Found matching items")
-    
-    -- Count how many ghosts can actually be filled
-    local fillable_count = 0
-    for _, ghost in ipairs(ghosts) do
-        if matches[ghost.base_equipment_name] and matches[ghost.base_equipment_name].count > 0 then
-            fillable_count = fillable_count + 1
-        end
-    end
-    -- game.print("[EQUIP FILL CLICK] Fillable count: " .. fillable_count)
-    
-    if fillable_count == 0 then
-        -- game.print("[EQUIP FILL CLICK] No ghosts can be filled")
-        if removed_count > 0 then
-            --player.print("Removed " .. removed_count .. " equipment item(s). No ghost equipment can be filled with available items.")
-            -- Refresh toolbar since items were added back to inventory
-            equipment_grid_fill.refresh_equipment_toolbar(player)
-        else
-            player.print("No ghost equipment can be filled with available items")
-        end
-        return
-    end
-    
-    -- game.print("[EQUIP FILL CLICK] Starting to fill " .. fillable_count .. " ghost(s)...")
-    
-    -- Fill each ghost
+    -- Fill each ghost (we search per-ghost now, so we don't need pre-computed matches)
     local filled_count = 0
     for idx, ghost in ipairs(ghosts) do
-        local match = matches[ghost.base_equipment_name]
-        if match and match.count > 0 then
-            -- Get the equipment name from the item's place_as_equipment_result
-            local item_prototype = prototypes.item[match.item_name]
-            local equipment_name = ghost.base_equipment_name
-            if item_prototype and item_prototype.place_as_equipment_result then
-                local place_result = item_prototype.place_as_equipment_result
-                if type(place_result) == "string" then
-                    equipment_name = place_result
-                elseif place_result and place_result.name then
-                    equipment_name = place_result.name
-                end
+        -- Get ghost quality for matching - try both stored and direct from equipment
+        local ghost_quality_name = "normal"
+        local quality_obj = nil
+        
+        -- Helper function to extract quality name from quality object
+        local function get_quality_name(quality)
+            if not quality then
+                return "normal"
             end
             
-            -- First, remove the ghost equipment
-            local success_remove = pcall(function()
-                if ghost.equipment and ghost.equipment.valid then
-                    ghost.equipment.destroy()
-                end
+            -- Try to access .name property (works for userdata/LuaQualityPrototype and tables)
+            local success, name = pcall(function()
+                return quality.name
             end)
             
-            -- Then try to place the real equipment at the ghost's position
-            local success, placed = pcall(function()
-                return grid.put({
-                    name = equipment_name,
-                    position = ghost.position
-                })
-            end)
+            if success and name then
+                return string.lower(name)
+            end
             
-            if success and placed then
-                -- Remove one item from inventory (using the item name, not equipment name)
-                for i = 1, #target_inventory do
-                    local inv_stack = target_inventory[i]
-                    if inv_stack and inv_stack.valid_for_read and inv_stack.name == match.item_name then
-                        local stack_quality = "Normal"
-                        if inv_stack.quality then
-                            stack_quality = inv_stack.quality.name
-                        end
-                        local target_quality = "Normal"
-                        if match.quality then
-                            target_quality = match.quality.name
+            -- Fallback: if it's a string
+            if type(quality) == "string" then
+                return string.lower(quality)
+            end
+            
+            return "normal"
+        end
+        
+        -- First try to get quality directly from equipment object (most reliable)
+        if ghost.equipment and ghost.equipment.valid and ghost.equipment.quality then
+            quality_obj = ghost.equipment.quality
+            ghost_quality_name = get_quality_name(quality_obj)
+        -- Fallback to stored quality
+        elseif ghost.quality then
+            quality_obj = ghost.quality
+            ghost_quality_name = get_quality_name(quality_obj)
+        end
+        
+        -- Find a matching item with the correct quality for this specific ghost
+        -- Don't rely on pre-computed matches since they might have wrong quality
+        local match = nil
+        local match_stack = nil
+        local match_index = nil
+        
+        -- Search inventory for item that places this equipment with matching quality
+        local checked_slots = 0
+        for i = 1, #target_inventory do
+            local stack = target_inventory[i]
+            if stack and stack.valid_for_read then
+                local item_prototype = prototypes.item[stack.name]
+                if item_prototype and item_prototype.place_as_equipment_result then
+                    local place_result = item_prototype.place_as_equipment_result
+                    local result_equipment_name = nil
+                    
+                    -- Extract equipment name from place_result
+                    if type(place_result) == "string" then
+                        result_equipment_name = place_result
+                    elseif place_result and place_result.name then
+                        result_equipment_name = place_result.name
+                    end
+                    
+                    -- Check if this item places the equipment we need
+                    if result_equipment_name == ghost.base_equipment_name then
+                        checked_slots = checked_slots + 1
+                        local stack_quality_name = "normal"
+                        if stack.quality then
+                            stack_quality_name = string.lower(stack.quality.name)
                         end
                         
-                        if stack_quality == target_quality then
-                            inv_stack.count = inv_stack.count - 1
-                            filled_count = filled_count + 1
-                            match.count = match.count - 1
+                        if stack_quality_name == ghost_quality_name then
+                            match = {
+                                item_name = stack.name,
+                                quality = stack.quality,
+                                count = stack.count
+                            }
+                            match_stack = stack
+                            match_index = i
                             break
                         end
                     end
                 end
-                
-                -- Update matches if count reached 0
-                if match.count <= 0 then
-                    matches[ghost.base_equipment_name] = nil
-                end
-            elseif success_remove and not placed then
-                -- Ghost was removed but equipment couldn't be placed at position
-                -- Try to place it anywhere in the grid
-                local success_anywhere, placed_anywhere = pcall(function()
-                    return grid.put({name = equipment_name})
-                end)
-                
-                if success_anywhere and placed_anywhere then
-                    -- Remove one item from inventory
-                    for i = 1, #target_inventory do
-                        local inv_stack = target_inventory[i]
-                        if inv_stack and inv_stack.valid_for_read and inv_stack.name == match.item_name then
-                            local stack_quality = "Normal"
-                            if inv_stack.quality then
-                                stack_quality = inv_stack.quality.name
-                            end
-                            local target_quality = "Normal"
-                            if match.quality then
-                                target_quality = match.quality.name
-                            end
-                            
-                            if stack_quality == target_quality then
-                                inv_stack.count = inv_stack.count - 1
-                                filled_count = filled_count + 1
-                                match.count = match.count - 1
-                                break
-                            end
-                        end
-                    end
-                    
-                    if match.count <= 0 then
-                        matches[ghost.base_equipment_name] = nil
-                    end
-                end
             end
         end
+        
+        if not match or not match_stack or match.count == 0 then
+            goto continue
+        end
+        
+        -- Get the equipment name from the item's place_as_equipment_result
+        local item_prototype = prototypes.item[match.item_name]
+        local equipment_name = ghost.base_equipment_name
+        if item_prototype and item_prototype.place_as_equipment_result then
+            local place_result = item_prototype.place_as_equipment_result
+            if type(place_result) == "string" then
+                equipment_name = place_result
+            elseif place_result and place_result.name then
+                equipment_name = place_result.name
+            end
+        end
+        
+        -- First, remove the ghost equipment
+        local success_remove = pcall(function()
+            if ghost.equipment and ghost.equipment.valid then
+                ghost.equipment.destroy()
+            end
+        end)
+        
+        -- Prepare grid.put() data with quality from the ghost
+        -- grid.put() will consume the correct quality item from inventory
+        local put_data = {
+            name = equipment_name,
+            position = ghost.position
+        }
+        
+        -- Use the ghost's quality (inherited from the ghost, not defaulting to normal)
+        if quality_obj then
+            put_data.quality = quality_obj
+        end
+        
+        -- Try to place the equipment with quality - it will consume from inventory
+        local success, placed = pcall(function()
+            return grid.put(put_data)
+        end)
+        
+        if success and placed then
+            -- Remove the item from inventory (grid.put() consumed it, but we need to update our tracking)
+            if match_stack.count > 0 then
+                match_stack.count = match_stack.count - 1
+            end
+            filled_count = filled_count + 1
+        elseif success_remove and not placed then
+            -- Ghost was removed but equipment couldn't be placed at position
+            -- Try to place it anywhere in the grid with quality from ghost
+            local put_data_anywhere = {
+                name = equipment_name
+            }
+            
+            -- Use the ghost's quality (inherited from the ghost)
+            if quality_obj then
+                put_data_anywhere.quality = quality_obj
+            end
+            
+            local success_anywhere, placed_anywhere = pcall(function()
+                return grid.put(put_data_anywhere)
+            end)
+            
+            if success_anywhere and placed_anywhere then
+                -- Remove one item from the matched stack
+                if match_stack.count > 0 then
+                    match_stack.count = match_stack.count - 1
+                end
+                filled_count = filled_count + 1
+            end
+        end
+        
+        ::continue::
     end
     
     -- game.print("[EQUIP FILL CLICK] Finished filling. Total filled: " .. filled_count)
@@ -1180,52 +1594,96 @@ function equipment_grid_fill.on_fill_button_click(player)
     equipment_grid_fill.refresh_equipment_toolbar(player)
 end
 
--- Handle equipment item button click - put ghost equipment item in cursor for manual placement
+-- Handle equipment item button click - place the correct quality item in player's hand
 function equipment_grid_fill.on_equipment_item_click(player, button_name, tags)
     if not player or not player.valid then
         return
     end
     
-    -- Get equipment name and item name from tags
-    local equipment_name = tags and tags.equipment_name
-    local item_name = tags and tags.item_name
-    
-    if not equipment_name or not item_name then
-        player.print("Invalid equipment button data")
+    -- Get the inventory from equipment grid context first
+    local grid, inventory, stack_index = equipment_grid_fill.get_equipment_grid_context(player)
+    if not inventory then
         return
     end
     
-    -- Get quality from tags if present
-    local target_quality = nil
-    if tags and tags.quality then
-        if type(tags.quality) == "table" and tags.quality.name then
-            target_quality = tags.quality.name
-        elseif type(tags.quality) == "string" then
-            target_quality = tags.quality
+    -- Use the inventory_index from tags to directly access the stack
+    local inventory_index = tags and tags.inventory_index
+    local found_stack = nil
+    
+    if inventory_index and inventory_index > 0 and inventory_index <= #inventory then
+        local stack = inventory[inventory_index]
+        if stack and stack.valid_for_read then
+            -- Verify the item matches what we expect
+            local expected_item_name = tags and tags.item_name
+            if expected_item_name and stack.name == expected_item_name then
+                found_stack = stack
+            end
         end
     end
     
-    -- Use cursor_ghost to place a ghost of the equipment item
-    -- This allows placing ghosts directly without needing the item in inventory
+    -- Fallback: if direct index didn't work, search by item name and quality from button name
+    if not found_stack or not found_stack.valid_for_read or found_stack.count == 0 then
+        
+        -- Extract quality from button name (format: toolbar_name_equipment_name_quality)
+        local item_name = tags and tags.item_name
+        if item_name then
+            -- Extract quality from button name - it's the last part after the last underscore
+            local quality_from_button = "normal"
+            local parts = {}
+            for part in string.gmatch(button_name, "([^_]+)") do
+                table.insert(parts, part)
+            end
+            if #parts >= 3 then
+                quality_from_button = string.lower(parts[#parts])
+            end
+            
+            -- Search inventory for matching item and quality
+            for i = 1, #inventory do
+                local stack = inventory[i]
+                if stack and stack.valid_for_read and stack.name == item_name then
+                    local stack_quality = "normal"
+                    if stack.quality then
+                        stack_quality = string.lower(stack.quality.name)
+                    end
+                    
+                    
+                    if stack_quality == quality_from_button then
+                        found_stack = stack
+                        break
+                    end
+                end
+            end
+        end
+    end
     
-    -- Clear cursor stack first if it has something (ghost takes priority but let's be safe)
+    if not found_stack or not found_stack.valid_for_read or found_stack.count == 0 then
+        return
+    end
+    
+    -- Clear cursor stack first (ghosts take priority but let's be safe)
     local cursor_stack = player.cursor_stack
     if cursor_stack and cursor_stack.valid and cursor_stack.valid_for_read then
         cursor_stack.clear()
     end
     
-    -- Set the cursor ghost
-    local ghost_data = {name = item_name}
-    if target_quality and target_quality ~= "Normal" then
-        local quality_obj = game.qualities[target_quality]
-        if quality_obj then
-            ghost_data.quality = quality_obj
-        end
+    -- Prepare ghost data with quality - use the actual stack data directly
+    -- For equipment items, we use cursor_ghost so player can place it in the grid
+    local ghost_data = {name = found_stack.name}
+    
+    -- Use the quality object directly from the stack (most reliable - actual data, not tags)
+    if found_stack.quality then
+        ghost_data.quality = found_stack.quality
     end
     
+    -- Set cursor ghost (this allows placing equipment in the grid)
     pcall(function()
         player.cursor_ghost = ghost_data
     end)
+    
+    -- Note: We don't remove the item from inventory when setting a ghost
+    -- The item will be consumed when the player actually places the ghost in the grid
+    -- Don't refresh toolbar here - it might close the GUI, and counts don't change until item is placed
+    -- The toolbar will be refreshed automatically when the equipment grid GUI is reopened
 end
 
 -- Handle cargo pod button click
