@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.9.5
+Date: 2025-12-22
+  Bugfix:
+    - Initialized temporary deployment data at the start of the show_extras_menu function rather than the end to avoid nil crashes
+---------------------------------------------------------------------------------------------------
 Version: 2.9.4
 Date: 2025-12-21
   Features:
