@@ -1,4 +1,9 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.9.5
+Date: 2025-12-25
+  Bugfix:
+    - Fixed: storage.temp_deployment_data now initialized before access, preventing nil reference errors during deployment
+---------------------------------------------------------------------------------------------------
 Version: 2.9.4
 Date: 2025-12-21
   Features:

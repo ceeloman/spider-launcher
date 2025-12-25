@@ -583,7 +583,7 @@ end
 
 function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     -- game.print("[DEBUG] show_extras_menu called for vehicle: " .. tostring(vehicle_data.name) .. ", deploy_target: " .. tostring(deploy_target))
-    
+
     if player.gui.screen["spidertron_extras_frame"] then
         player.gui.screen["spidertron_extras_frame"].destroy()
     end
@@ -600,6 +600,13 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     -- Scan platform inventory for available items
     -- game.print("[DEBUG] Scanning platform inventory...")
     local available_items = map_gui.scan_platform_inventory(vehicle_data)
+
+    storage.temp_deployment_data = {
+        vehicle = vehicle_data,
+        deploy_target = deploy_target,
+        available_items = available_items
+    }
+
     local item_count = 0
     for _ in pairs(available_items) do item_count = item_count + 1 end
     -- game.print("[DEBUG] Available items scan complete. Found " .. tostring(item_count) .. " item types")
@@ -1362,12 +1369,6 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         name = "confirm_deploy_with_extras_btn",
         caption = "Deploy with Selected Items",
         style = "confirm_button" -- Removed enabled = items_shown
-    }
-
-    storage.temp_deployment_data = {
-        vehicle = vehicle_data,
-        deploy_target = deploy_target,
-        available_items = available_items
     }
 end
 
