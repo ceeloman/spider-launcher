@@ -582,12 +582,6 @@ function map_gui.list_compatible_items_in_inventory(inventory, compatible_items_
 end
 
 function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
-    -- Initialize temp_deployment_data FIRST
-    storage.temp_deployment_data = {
-        vehicle = vehicle_data,
-        deploy_target = deploy_target,
-        available_items = {}
-    }
     
     if player.gui.screen["spidertron_extras_frame"] then
         player.gui.screen["spidertron_extras_frame"].destroy()
@@ -604,6 +598,13 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     
     -- Scan platform inventory for available items
     local available_items = map_gui.scan_platform_inventory(vehicle_data)
+    
+    -- Store temporary deployment data
+    storage.temp_deployment_data = {
+        vehicle = vehicle_data,
+        deploy_target = deploy_target,
+        available_items = available_items
+    }
     local item_count = 0
     for _ in pairs(available_items) do item_count = item_count + 1 end
     
