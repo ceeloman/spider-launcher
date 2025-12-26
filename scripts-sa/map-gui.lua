@@ -441,10 +441,10 @@ function map_gui.show_deployment_menu(player, vehicles)
     
     local caption_text = nil
     if type(planet_display_name) == "table" then
-        caption_text = {"", "Deploy from orbit above ", planet_display_name}
+        caption_text = {"", "Choose Vehicle to deploy from orbit above ", planet_display_name}
     else
         caption_text = "Deploy from orbit above " .. planet_display_name
-    end
+    
     
     frame.add{
         type = "label",
@@ -540,7 +540,7 @@ function map_gui.show_deployment_menu(player, vehicles)
                 type = "sprite-button",
                 name = "deploy_target_" .. i,
                 sprite = "utility/shoot_cursor_green",
-                tooltip = "Deploy to map cursor location"
+                tooltip = "Click to deploy here - Opens the loadout menu before deployment"
             }
             target_button.style.size = 28
             
