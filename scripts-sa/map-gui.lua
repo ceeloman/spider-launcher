@@ -441,9 +441,10 @@ function map_gui.show_deployment_menu(player, vehicles)
     
     local caption_text = nil
     if type(planet_display_name) == "table" then
-        caption_text = {"", "Choose Vehicle to deploy from orbit above ", planet_display_name}
+        caption_text = {"", "Select vehicle to deploy from ", planet_display_name, " orbit"}
     else
         caption_text = "Deploy from orbit above " .. planet_display_name
+    end
     
     
     frame.add{
@@ -1280,9 +1281,21 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         name = "button_flow",
         direction = "horizontal"
     }
-    button_flow.style.horizontal_align = "right"
     button_flow.style.horizontally_stretchable = true
 
+    local back_button = button_flow.add{
+        type = "button",
+        name = "back_to_deployment_menu_btn",
+        caption = "Back",
+        tooltip = "Return to deployment menu",
+        style = "back_button"
+    }
+    
+    local spacer = button_flow.add{
+        type = "empty-widget"
+    }
+    spacer.style.horizontally_stretchable = true
+    
     button_flow.add{
         type = "button",
         name = "confirm_deploy_btn",
@@ -1574,6 +1587,24 @@ function handle_extras_menu_clicks(event)
     end
 end
 
+script.on_event(defines.events.on_gui_confirmed, function(event)
+    local player = game.get_player(event.player_index)
+    if not player then return end
+    
+    -- Check if extras menu is open
+    local extras_frame = player.gui.screen["spidertron_extras_frame"]
+    if extras_frame and extras_frame.valid and event.element == extras_frame then
+        -- Find and click the confirm button
+        local confirm_btn = extras_frame.button_flow and extras_frame.button_flow.confirm_deploy_btn
+        if confirm_btn and confirm_btn.valid then
+            handle_extras_menu_clicks({
+                player_index = event.player_index,
+                element = confirm_btn
+            })
+        end
+    end
+end)
+
 function map_gui.on_gui_click(event)
     local element = event.element
     if not element or not element.valid then return end
@@ -1662,8 +1693,47 @@ function map_gui.on_gui_click(event)
         return
     end
 
-    if element.name == "close_extras_menu_btn" or 
-       element.name == "confirm_deploy_btn" then
+    if element.name == "close_deployment_menu_btn" then
+        if player.gui.screen["spidertron_deployment_frame"] then
+            player.gui.screen["spidertron_deployment_frame"].destroy()
+        end
+        return
+    end
+
+    if element.name == "close_extras_menu_btn" then
+        -- Close the extras menu
+        if player.gui.screen["spidertron_extras_frame"] then
+            player.gui.screen["spidertron_extras_frame"].destroy()
+        end
+        
+        -- Retrieve the stored vehicles list and reopen deployment menu
+        local vehicles = storage.spidertrons
+        if vehicles and #vehicles > 0 then
+            map_gui.show_deployment_menu(player, vehicles)
+        else
+            player.print("Error: No vehicles available")
+        end
+        return
+    end
+
+    if element.name == "back_to_deployment_menu_btn" then
+        -- Close the extras menu
+        if player.gui.screen["spidertron_extras_frame"] then
+            player.gui.screen["spidertron_extras_frame"].destroy()
+        end
+        
+        -- Retrieve the stored vehicles list
+        local vehicles = storage.spidertrons
+        if vehicles and #vehicles > 0 then
+            -- Reopen the deployment menu
+            map_gui.show_deployment_menu(player, vehicles)
+        else
+            player.print("Error: No vehicles available")
+        end
+        return
+    end
+
+    if element.name == "confirm_deploy_btn" then
         handle_extras_menu_clicks(event)
         return
     end
@@ -1775,12 +1845,15 @@ function map_gui.on_lua_shortcut(event)
     end
 end
 
-function map_gui.on_gui_closed(event)
+script.on_event(defines.events.on_gui_closed, function(event)
     local player = game.get_player(event.player_index)
-    if player and player.gui.screen["spidertron_deployment_frame"] then
-        player.gui.screen["spidertron_deployment_frame"].destroy()
+    if not player then return end
+    
+    -- Clean up equipment grid tracking when grid is closed
+    if storage.current_equipment_grid_vehicle then
+        storage.current_equipment_grid_vehicle = nil
     end
-end
+end)
 
 function map_gui.destroy_deploy_button(player)
     if player.gui.screen["spidertron_deployment_frame"] then

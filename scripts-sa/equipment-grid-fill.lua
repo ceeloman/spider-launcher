@@ -1332,10 +1332,11 @@ function equipment_grid_fill.on_fill_button_click(player)
     -- IMPORTANT: After grid.take(), the equipment becomes invalid, so store name first
     -- We need to check space and remove one at a time, re-checking after each removal
     local failed_removals = {}
-    
+
     for _, equipment in ipairs(equipment_to_remove) do
         if equipment and equipment.valid then
             local equipment_name = equipment.name
+            local equipment_quality = equipment.quality  -- CAPTURE QUALITY BEFORE REMOVAL
             
             -- Find the item that places this equipment to get the item name
             local item_name = equipment_grid_fill.find_item_for_equipment(equipment_name)
@@ -1346,37 +1347,58 @@ function equipment_grid_fill.on_fill_button_click(player)
             -- Check if we can insert this item into inventory before removing
             local item_prototype = prototypes.item[item_name]
             if item_prototype then
-                -- Test if we can insert at least 1 of this item (equipment typically returns 1 item)
-                local test_insert = target_inventory.insert({name = item_name, count = 1})
+                -- Create test item with quality
+                local test_item = {name = item_name, count = 1}
+                if equipment_quality then
+                    test_item.quality = equipment_quality
+                end
+                
+                -- Test if we can insert at least 1 of this item with quality
+                local test_insert = target_inventory.insert(test_item)
                 if test_insert == 0 then
                     -- Cannot insert - inventory is full, skip this equipment
                     table.insert(failed_removals, {
                         name = item_name,
                         equipment = equipment
                     })
-                    -- Skip to next equipment
                     goto continue
                 end
                 
-                -- Remove the test item we just inserted
+                -- Remove the test item we just inserted (search by name and quality)
                 for i = 1, #target_inventory do
                     local stack = target_inventory[i]
                     if stack and stack.valid_for_read and stack.name == item_name then
-                        stack.count = stack.count - 1
-                        break
+                        -- Check quality match
+                        local stack_quality_matches = true
+                        if equipment_quality then
+                            local stack_quality_name = stack.quality and stack.quality.name or "normal"
+                            local equip_quality_name = equipment_quality.name or "normal"
+                            stack_quality_matches = (stack_quality_name == equip_quality_name)
+                        elseif stack.quality then
+                            stack_quality_matches = false
+                        end
+                        
+                        if stack_quality_matches then
+                            stack.count = stack.count - 1
+                            break
+                        end
                     end
                 end
             end
             
-            -- We verified we can insert, so now remove the equipment
+            -- Remove the equipment (grid.take returns SimpleItemStack without quality)
             local success_take, item_result = pcall(function()
                 return grid.take({equipment = equipment, by_player = player})
             end)
             
             if success_take and item_result then
                 -- Successfully took the equipment (equipment is now invalid)
+                -- Re-apply the quality we captured earlier
+                if equipment_quality then
+                    item_result.quality = equipment_quality
+                end
                 
-                -- Try to insert into inventory
+                -- Try to insert into inventory with quality
                 local success_insert, inserted = pcall(function()
                     return target_inventory.insert(item_result)
                 end)
@@ -1384,12 +1406,10 @@ function equipment_grid_fill.on_fill_button_click(player)
                 if success_insert and inserted and inserted > 0 then
                     removed_count = removed_count + 1
                 else
-                    -- This shouldn't happen since we checked, but handle it anyway
-                    -- If it fails, we've already removed the equipment, so item is lost
-                    -- This is a safety check
+                    -- Failed to insert despite pre-check
                     table.insert(failed_removals, {
                         name = item_name,
-                        equipment = nil  -- Already removed, can't put back
+                        equipment = nil
                     })
                 end
             end
