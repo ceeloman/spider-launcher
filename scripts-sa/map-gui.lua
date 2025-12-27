@@ -33,7 +33,7 @@ local function capitalize_first(str)
 end
 
 -- Get the quality name from a stack or quality object
-local function get_quality_name(stack_or_quality)
+function get_quality_name(stack_or_quality)
     if not stack_or_quality then return "Normal" end
     if type(stack_or_quality) == "string" then return stack_or_quality end
     if stack_or_quality.name then return stack_or_quality.name end
@@ -118,6 +118,118 @@ local function list_match_list(list, list_2)
         if match_in_list(list, string) then return true end
     end
     return false
+end
+
+-- Helper function to add item entry (extracted from show_extras_menu)
+local function add_item_entry(items_table, item, item_info)
+    if item_info and item_info.total > 0 then
+        local qualities = {}
+        for _, quality_data in pairs(item_info.by_quality) do
+            table.insert(qualities, quality_data)
+        end
+        table.sort(qualities, function(a, b) return a.level > b.level end)
+        
+        for _, quality_data in ipairs(qualities) do
+            if quality_data.count > 0 then
+                local left_flow = items_table.add{
+                    type = "flow",
+                    direction = "horizontal"
+                }
+                left_flow.style.vertical_align = "center"
+                
+                create_item_icon_with_quality(left_flow, item.name, quality_data, capitalize_first(quality_data.name))
+                
+                left_flow.add{
+                    type = "label",
+                    caption = prototypes.item[item.name].localised_name or item.name .. " (" .. quality_data.count .. " available)"
+                }
+                
+                local right_flow = items_table.add{
+                    type = "flow",
+                    direction = "horizontal"
+                }
+                right_flow.style.horizontal_align = "right"
+                right_flow.style.horizontally_stretchable = true
+                right_flow.style.vertical_align = "center"
+                local stack_size = 50
+                local prototype = prototypes.item[item.name]
+                if prototype then
+                    stack_size = prototype.stack_size
+                end
+                local quality_name = string.lower(quality_data.name)
+                local slider = right_flow.add{
+                    type = "slider",
+                    name = "slider_" .. item.name .. "_" .. quality_name,
+                    minimum_value = 0,
+                    maximum_value = quality_data.count,
+                    value = 0,
+                    value_step = 1
+                }
+                slider.style.width = 140
+                local count_textfield = right_flow.add{
+                    type = "textfield",
+                    name = "text_" .. item.name .. "_" .. quality_name,
+                    text = "0",
+                    numeric = true,
+                    allow_decimal = false,
+                    allow_negative = false
+                }
+                count_textfield.style.width = 40
+                count_textfield.style.horizontal_align = "right"
+                local stack_button = right_flow.add{
+                    type = "sprite-button",
+                    name = "stack_" .. item.name .. "_" .. quality_data.name,
+                    sprite = "ovd_stack",
+                    tooltip = "Add 1 stack (" .. stack_size .. " items)",
+                    tags = {
+                        action = "add_stack",
+                        item_name = item.name,
+                        quality_name = quality_data.name,
+                        stack_size = stack_size,
+                        max_value = quality_data.count
+                    }
+                }
+                stack_button.style.size = 24
+                slider.tooltip = "Slide to select quantity"
+                count_textfield.tooltip = "Type quantity or use slider"
+                count_textfield.tags = {max_value = quality_data.count}
+                slider.tags = {
+                    item_name = item.name,
+                    quality_name = quality_data.name,
+                    max_value = quality_data.count
+                }
+            end
+        end
+    else
+        local left_flow = items_table.add{
+            type = "flow",
+            direction = "horizontal"
+        }
+        left_flow.style.vertical_align = "center"
+        local sprite = left_flow.add{
+            type = "sprite-button",
+            sprite = get_sprite_name(item.name),
+            tooltip = "No " .. item.display_name .. " available",
+            enabled = false
+        }
+        sprite.style.size = 28
+        left_flow.add{
+            type = "label",
+            caption = item.display_name .. " (0 available)",
+            tooltip = "No " .. item.display_name .. " available"
+        }.style.font_color = {r=0.5, g=0.5, b=0.5}
+        local right_flow = items_table.add{
+            type = "flow",
+            direction = "horizontal"
+        }
+        right_flow.style.horizontal_align = "right"
+        right_flow.style.horizontally_stretchable = true
+        right_flow.add{
+            type = "label",
+            caption = "Not available",
+            tooltip = "No " .. item.display_name .. " available"
+        }.style.font_color = {r=0.5, g=0.5, b=0.5}
+    end
 end
 
 -- ============================================================================
@@ -439,34 +551,57 @@ function map_gui.show_deployment_menu(player, vehicles)
         end
     end
     
-    local caption_text = nil
-    if type(planet_display_name) == "table" then
-        caption_text = {"", "Select vehicle to deploy from ", planet_display_name, " orbit"}
-    else
-        caption_text = "Deploy from orbit above " .. planet_display_name
-    end
-    
-    
+    -- local caption_text = nil
+    -- if type(planet_display_name) == "table" then
+    --     caption_text = {"", "Select vehicle to deploy from ", planet_display_name, " orbit"}
+    -- else
+    --     caption_text = "Deploy from orbit above " .. planet_display_name
+    -- end
+
     frame.add{
         type = "label",
-        caption = caption_text,
+        caption = "Orbital Deployment",
         style = "caption_label"
     }
+
+    -- frame.add{
+    --     type = "label",
+    --     caption = caption_text,
+    --     style = "caption_label"
+    -- }
     
-    if frame.vehicle_table then
-        frame.vehicle_table.destroy()
-    end
+    -- Create tabbed pane
+    local tabbed_pane = frame.add{
+        type = "tabbed-pane",
+        name = "deployment_tabbed_pane"
+    }
     
-    local scroll_pane = frame.add{
+        -- ========================================================================
+    -- VEHICLES TAB
+    -- ========================================================================
+    local vehicles_tab = tabbed_pane.add{
+        type = "tab",
+        name = "vehicles_tab",
+        caption = "[img=item/spidertron] Vehicles",
+        tooltip = "Deploy vehicles from orbit"
+    }
+    
+    local vehicles_content = tabbed_pane.add{
+        type = "flow",
+        name = "vehicles_content",
+        direction = "vertical"
+    }
+    
+    local vehicles_scroll_pane = vehicles_content.add{
         type = "scroll-pane",
         name = "vehicle_scroll_pane",
         horizontal_scroll_policy = "never",
         vertical_scroll_policy = "auto"
     }
-    scroll_pane.style.maximal_height = 400
-    scroll_pane.style.minimal_width = 400
+    vehicles_scroll_pane.style.maximal_height = 400
+    vehicles_scroll_pane.style.minimal_width = 400
     
-    local vehicle_table = scroll_pane.add{
+    local vehicle_table = vehicles_scroll_pane.add{
         type = "table",
         name = "vehicle_table",
         column_count = 1,
@@ -565,119 +700,149 @@ function map_gui.show_deployment_menu(player, vehicles)
         end
     end
     
-    storage.spidertrons = vehicles
-end
-
--- Helper function to add item entry (extracted from show_extras_menu)
-local function add_item_entry(items_table, item, item_info)
-    if item_info and item_info.total > 0 then
-        local qualities = {}
-        for _, quality_data in pairs(item_info.by_quality) do
-            table.insert(qualities, quality_data)
-        end
-        table.sort(qualities, function(a, b) return a.level > b.level end)
-        
-        for _, quality_data in ipairs(qualities) do
-            if quality_data.count > 0 then
-                local left_flow = items_table.add{
-                    type = "flow",
-                    direction = "horizontal"
-                }
-                left_flow.style.vertical_align = "center"
-                
-                create_item_icon_with_quality(left_flow, item.name, quality_data, capitalize_first(quality_data.name))
-                
-                left_flow.add{
-                    type = "label",
-                    caption = prototypes.item[item.name].localised_name or item.name .. " (" .. quality_data.count .. " available)"
-                }
-                
-                local right_flow = items_table.add{
-                    type = "flow",
-                    direction = "horizontal"
-                }
-                right_flow.style.horizontal_align = "right"
-                right_flow.style.horizontally_stretchable = true
-                right_flow.style.vertical_align = "center"
-                local stack_size = 50
-                local prototype = prototypes.item[item.name]
-                if prototype then
-                    stack_size = prototype.stack_size
+    tabbed_pane.add_tab(vehicles_tab, vehicles_content)
+    
+    -- ========================================================================
+    -- SUPPLIES TAB
+    -- ========================================================================
+    local supplies_tab = tabbed_pane.add{
+        type = "tab",
+        name = "supplies_tab",
+        caption = "[img=item/construction-robot] Supplies",
+        tooltip = "Deploy construction and logistic robots"
+    }
+    
+    local supplies_content = tabbed_pane.add{
+        type = "flow",
+        name = "supplies_content",
+        direction = "vertical"
+    }
+    
+    -- Info label
+    local info_flow = supplies_content.add{
+        type = "flow",
+        direction = "vertical"
+    }
+    info_flow.style.top_padding = 10
+    info_flow.style.left_padding = 10
+    info_flow.style.right_padding = 10
+    
+    local info_label = info_flow.add{
+        type = "label",
+        caption = "Deploy robots directly to the surface. Robots will automatically join the nearest roboport network.",
+        style = "label"
+    }
+    info_label.style.single_line = false
+    info_label.style.maximal_width = 380
+    info_label.style.font_color = {r=0.7, g=0.7, b=0.7}
+    
+    -- Separator
+    local separator = supplies_content.add{
+        type = "line",
+        direction = "horizontal"
+    }
+    separator.style.top_margin = 10
+    separator.style.bottom_margin = 10
+    
+    -- Bot selection scroll pane
+    local supplies_scroll_pane = supplies_content.add{
+        type = "scroll-pane",
+        name = "supplies_scroll_pane",
+        horizontal_scroll_policy = "never",
+        vertical_scroll_policy = "auto"
+    }
+    supplies_scroll_pane.style.maximal_height = 300
+    supplies_scroll_pane.style.minimal_width = 400
+    
+    local supplies_table = supplies_scroll_pane.add{
+        type = "table",
+        name = "supplies_table",
+        column_count = 2,
+        style = "table"
+    }
+    
+    -- Scan platform inventory for bots (similar to scan_platform_inventory but simpler)
+    local available_bots = {
+        ["construction-robot"] = {total = 0, by_quality = {}},
+        ["logistic-robot"] = {total = 0, by_quality = {}}
+    }
+    
+    -- Find ANY platform hub to scan for bots
+    for _, surface in pairs(game.surfaces) do
+        if surface.platform and surface.platform.hub and surface.platform.hub.valid then
+            local hub = surface.platform.hub
+            local inventory = hub.get_inventory(defines.inventory.chest)
+            
+            if inventory then
+                for i = 1, #inventory do
+                    local stack = inventory[i]
+                    if stack and stack.valid_for_read then
+                        local bot_name = stack.name
+                        
+                        if bot_name == "construction-robot" or bot_name == "logistic-robot" then
+                            local quality_name = get_quality_name(stack.quality)
+                            local quality_level = 1
+                            local quality_color = {r=1, g=1, b=1}
+                            
+                            if stack.quality then
+                                quality_level = stack.quality.level
+                                quality_color = stack.quality.color
+                            end
+                            
+                            local quality_key = quality_name
+                            
+                            if not available_bots[bot_name].by_quality[quality_key] then
+                                available_bots[bot_name].by_quality[quality_key] = {
+                                    name = quality_name,
+                                    level = quality_level,
+                                    color = quality_color,
+                                    count = 0
+                                }
+                            end
+                            
+                            available_bots[bot_name].by_quality[quality_key].count = 
+                                available_bots[bot_name].by_quality[quality_key].count + stack.count
+                            available_bots[bot_name].total = 
+                                available_bots[bot_name].total + stack.count
+                        end
+                    end
                 end
-                local quality_name = string.lower(quality_data.name)
-                local slider = right_flow.add{
-                    type = "slider",
-                    name = "slider_" .. item.name .. "_" .. quality_name,
-                    minimum_value = 0,
-                    maximum_value = quality_data.count,
-                    value = 0,
-                    value_step = 1
-                }
-                slider.style.width = 140
-                local count_textfield = right_flow.add{
-                    type = "textfield",
-                    name = "text_" .. item.name .. "_" .. quality_name,
-                    text = "0",
-                    numeric = true,
-                    allow_decimal = false,
-                    allow_negative = false
-                }
-                count_textfield.style.width = 40
-                count_textfield.style.horizontal_align = "right"
-                local stack_button = right_flow.add{
-                    type = "sprite-button",
-                    name = "stack_" .. item.name .. "_" .. quality_data.name,
-                    sprite = "ovd_stack",
-                    tooltip = "Add 1 stack (" .. stack_size .. " items)",
-                    tags = {
-                        action = "add_stack",
-                        item_name = item.name,
-                        quality_name = quality_data.name,
-                        stack_size = stack_size,
-                        max_value = quality_data.count
-                    }
-                }
-                stack_button.style.size = 24
-                slider.tooltip = "Slide to select quantity"
-                count_textfield.tooltip = "Type quantity or use slider"
-                count_textfield.tags = {max_value = quality_data.count}
-                slider.tags = {
-                    item_name = item.name,
-                    quality_name = quality_data.name,
-                    max_value = quality_data.count
-                }
             end
         end
-    else
-        local left_flow = items_table.add{
-            type = "flow",
-            direction = "horizontal"
-        }
-        left_flow.style.vertical_align = "center"
-        local sprite = left_flow.add{
-            type = "sprite-button",
-            sprite = get_sprite_name(item.name),
-            tooltip = "No " .. item.display_name .. " available",
-            enabled = false
-        }
-        sprite.style.size = 28
-        left_flow.add{
-            type = "label",
-            caption = item.display_name .. " (0 available)",
-            tooltip = "No " .. item.display_name .. " available"
-        }.style.font_color = {r=0.5, g=0.5, b=0.5}
-        local right_flow = items_table.add{
-            type = "flow",
-            direction = "horizontal"
-        }
-        right_flow.style.horizontal_align = "right"
-        right_flow.style.horizontally_stretchable = true
-        right_flow.add{
-            type = "label",
-            caption = "Not available",
-            tooltip = "No " .. item.display_name .. " available"
-        }.style.font_color = {r=0.5, g=0.5, b=0.5}
     end
+    
+    -- Add construction robots
+    add_item_entry(supplies_table, 
+        {name = "construction-robot", display_name = "Construction Robot"}, 
+        available_bots["construction-robot"])
+    
+    -- Add logistic robots
+    add_item_entry(supplies_table, 
+        {name = "logistic-robot", display_name = "Logistic Robot"}, 
+        available_bots["logistic-robot"])
+    
+    -- Deploy button for supplies
+    local supplies_button_flow = supplies_content.add{
+        type = "flow",
+        direction = "horizontal"
+    }
+    supplies_button_flow.style.top_padding = 10
+    supplies_button_flow.style.horizontally_stretchable = true
+    supplies_button_flow.style.horizontal_align = "right"
+    
+    local deploy_supplies_btn = supplies_button_flow.add{
+        type = "button",
+        name = "deploy_supplies_btn",
+        caption = "Deploy Supplies",
+        style = "confirm_button"
+    }
+    deploy_supplies_btn.style.minimal_width = 60
+    deploy_supplies_btn.tooltip = "Deploy selected robots to the surface"
+    
+    tabbed_pane.add_tab(supplies_tab, supplies_content)
+    
+    -- Store available bots for later use
+    storage.supplies_available_bots = available_bots
 end
 
 function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
@@ -1422,7 +1587,7 @@ function handle_extras_menu_clicks(event)
         end
         
         if deployment_data.has_equipment_ghosts == true then
-            player.print("Has ghosts, checking tab...")
+            ----player.print("Has ghosts, checking tab...")
             
             local frame = player.gui.screen["spidertron_extras_frame"]
             if frame and frame.valid then
@@ -1437,11 +1602,11 @@ function handle_extras_menu_clicks(event)
                         
                         if child.type == "tab" then
                             tab_count = tab_count + 1
-                            player.print("Tab #" .. tab_count .. ": " .. tostring(child.name))
+                            --player.print("Tab #" .. tab_count .. ": " .. tostring(child.name))
                             
                             if child.name == "equipment_tab" then
                                 equipment_tab_index = tab_count
-                                player.print("Found equipment_tab at tab index " .. tab_count)
+                                --player.print("Found equipment_tab at tab index " .. tab_count)
                                 break
                             end
                         end
@@ -1449,15 +1614,15 @@ function handle_extras_menu_clicks(event)
                     
                     if equipment_tab_index then
                         local current_index = tabbed_pane.selected_tab_index or 1
-                        player.print("Current tab: " .. current_index .. ", Equipment tab: " .. equipment_tab_index)
+                        --player.print("Current tab: " .. current_index .. ", Equipment tab: " .. equipment_tab_index)
                         
                         if current_index == equipment_tab_index then
-                            player.print("Already on equipment tab, allowing deployment")
+                            --player.print("Already on equipment tab, allowing deployment")
                             -- Fall through
                         else
-                            player.print("Switching to equipment tab...")
+                            --player.print("Switching to equipment tab...")
                             tabbed_pane.selected_tab_index = equipment_tab_index
-                            player.print("[color=yellow]Unfulfilled equipment requests detected. Review equipment tab before deploying.[/color]")
+                            player.print("[color=yellow]Unfulfilled equipment requests. Review equipment tab before deploying.[/color]")
                             return
                         end
                     end
@@ -1564,7 +1729,7 @@ function handle_extras_menu_clicks(event)
                 for _, item in ipairs(missing_items) do
                     error_msg = error_msg .. "\n" .. item.name .. " (" .. item.quality .. "): need " .. item.needed .. ", have " .. item.available
                 end
-                player.print(error_msg)
+                --player.print(error_msg)
                 return
             end
         end
@@ -1616,6 +1781,63 @@ function map_gui.on_gui_click(event)
         if player.gui.screen["spidertron_deployment_frame"] then
             player.gui.screen["spidertron_deployment_frame"].destroy()
         end
+        return
+    end
+
+    -- Handle supplies deployment button
+    if element.name == "deploy_supplies_btn" then
+        local player = game.get_player(event.player_index)
+        if not player then return end
+        
+        -- Find the frame and collect selected bot counts
+        local frame = player.gui.screen["spidertron_deployment_frame"]
+        if not frame then return end
+        
+        local tabbed_pane = frame["deployment_tabbed_pane"]
+        if not tabbed_pane then return end
+        
+        local supplies_content = tabbed_pane["supplies_content"]
+        if not supplies_content then return end
+        
+        local supplies_scroll = supplies_content["supplies_scroll_pane"]
+        if not supplies_scroll then return end
+        
+        local supplies_table = supplies_scroll["supplies_table"]
+        if not supplies_table then return end
+        
+        -- Collect selected bot counts
+        local selected_bots = {}
+        
+        for _, child in pairs(supplies_table.children) do
+            if child.type == "flow" and child.children then
+                for _, subchild in pairs(child.children) do
+                    if subchild.type == "textfield" and subchild.name then
+                        local bot_name, quality = subchild.name:match("^text_(.+)_(.+)$")
+                        if bot_name and quality then
+                            local count = tonumber(subchild.text) or 0
+                            if count > 0 then
+                                table.insert(selected_bots, {
+                                    name = bot_name,
+                                    quality = quality,
+                                    count = count
+                                })
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        if #selected_bots == 0 then
+            --player.print("No robots selected for deployment")
+            return
+        end
+        
+        -- Close the deployment menu
+        frame.destroy()
+        
+        deployment.deploy_supplies(player, player.surface, selected_bots)
+        
         return
     end
 

@@ -1,6 +1,42 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.9.6
+Date: 2025-12-27
+  Features:
+    - Remote Container Deployment
+      - Remotely deploy Logistic / Construction robots from a container. Rather than needing to manually, or struggle remotely to add robots to a network.
+      - Remotely deploy Spider-vehicles from a container. Spider-vehicles only as they have somewhat of their own intelligence and should be able to deploy themselves. Not car vehicle types due to the potential collision complications.
+    - Remote Supplies Deployment tab
+      - Deploy robots directly to the surface below. Similar to how the mod deploys vehicles. 
+      - Robots do not auto deploy, you will have to deploy them from the container.
+  Notes:
+    - Logistic and Construction robots auto-join a roboport network if available. Remain stationary until they in a network construction area.
+    - Construction bots prefer to join a vehicle network if available. Logistic bots only join Roboport networks.
+---------------------------------------------------------------------------------------------------
+Version: 2.9.6
+Date: 2025-12-26
+  Features:
+    - Equipment display now groups by quality and shows unfulfilled requests separately (e.g., "Capacitor [Legendary] x9 (x2 unfulfilled)")
+    - Equipment ghosts now display actual equipment names instead of generic "equipment-ghost"
+    - Smart deployment flow: clicking Deploy from non-Equipment tabs switches to Equipment tab if unfulfilled equipment requests exist
+  Changes:
+    - Simplified deployment button layout: removed "Launch Without Add-ons" button (just click Deploy with nothing selected)
+    - X button in deployment menu now returns to vehicle list instead of canceling completely (ESC still cancels everything)
+    - Removed redundant back buttons to match standard Factorio UI patterns
+    - Equipment sorted by name first, then quality level for better organization
+    - Deploy button always visible in deployment menu - validation happens on click
+  Bugfixes:
+    - Fixed multiplayer deployment conflicts - each player now has separate deployment data
+    - Added deployment validation to prevent race conditions when multiple players deploy the same vehicle
+    - Added item availability validation - shows detailed error if selected items no longer available
+    - Fixed equipment ghost detection using equipment.prototype.type instead of name pattern matching
+    - Fixed planet display name to use space_location.localised_name for proper localization
+  Info:
+    - Unfulfilled equipment requests shown in blue with "(unfulfilled)" suffix
+    - Warning message displayed when equipment ghosts detected
+    - Deploying with unfulfilled equipment will attempt to fill from platform inventory during deployment
+---------------------------------------------------------------------------------------------------
 Version: 2.9.5
-Date: 2025-12-22
+Date: 2025-12-25
   Bugfix:
     - Initialized temporary deployment data at the start of the show_extras_menu function rather than the end to avoid nil crashes
 ---------------------------------------------------------------------------------------------------

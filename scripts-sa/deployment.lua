@@ -773,9 +773,40 @@ function deployment.on_cargo_pod_finished_descending(event)
     if storage.pending_pod_deployments then
         for pod_id, deployment_data in pairs(storage.pending_pod_deployments) do
             if deployment_data.pod == pod then
-
+                
+                -- Teleport to actual surface if needed
                 if deployment_data.actual_surface and deployment_data.actual_position then
                     pod.teleport(deployment_data.actual_position, deployment_data.actual_surface)
+                end
+                
+                if deployment_data.is_supplies_deployment then
+                    local player = deployment_data.player
+                    local bots = deployment_data.bots or {}
+                    
+                    -- TODO: Deploy bots here when ready
+                    -- For each bot type/quality in bots table:
+                    --   for i = 1, bot_data.count do
+                    --     create bot entity at pod.position
+                    --     optionally set autopilot_destination to nearest roboport
+                    --   end
+                    
+                    -- Create smoke effect
+                    for i = 1, 30 do
+                        pod.surface.create_trivial_smoke({
+                            name = "smoke-train-stop",
+                            position = {
+                                x = pod.position.x + (math.random() - 0.5) * 4,
+                                y = pod.position.y + (math.random() - 0.5) * 4
+                            },
+                            initial_height = 0.5,
+                            max_radius = 2.0,
+                            speed = {0, -0.03}
+                        })
+                    end
+                    
+                    -- Remove from storage
+                    storage.pending_pod_deployments[pod_id] = nil
+                    return
                 end
                 
                 -- Get the deployment information
@@ -1282,6 +1313,198 @@ function deployment.on_cargo_pod_finished_descending(event)
             end
         end
     end
+end
+
+-- Deploy supplies (robots) from orbit without a vehicle
+function deployment.deploy_supplies(player, target_surface, selected_bots)
+    -- Find ANY platform hub that has the requested bots
+    local hub = nil
+    local hub_inventory = nil
+    
+    for _, surface in pairs(game.surfaces) do
+        if surface.platform and surface.platform.hub and surface.platform.hub.valid then
+            local test_hub = surface.platform.hub
+            local test_inv = test_hub.get_inventory(defines.inventory.chest)
+            
+            if test_inv then
+                -- Check if this hub has the requested bots
+                local has_all_bots = true
+                
+                for _, bot_data in ipairs(selected_bots) do
+                    local found_count = 0
+                    
+                    for i = 1, #test_inv do
+                        local stack = test_inv[i]
+                        if stack and stack.valid_for_read and stack.name == bot_data.name then
+                            local stack_quality = get_quality_name(stack.quality)
+                            if stack_quality == bot_data.quality then
+                                found_count = found_count + stack.count
+                            end
+                        end
+                    end
+                    
+                    if found_count < bot_data.count then
+                        has_all_bots = false
+                        break
+                    end
+                end
+                
+                if has_all_bots then
+                    hub = test_hub
+                    hub_inventory = test_inv
+                    break
+                end
+            end
+        end
+    end
+    
+    if not hub or not hub_inventory then
+        player.print("Could not find platform with required robots")
+        return
+    end
+    
+    -- Determine landing position based on player view
+    local landing_pos = {x = 0, y = 0}
+
+    -- Check if player is in map view
+    if player.render_mode == defines.render_mode.chart or 
+    player.render_mode == defines.render_mode.chart_zoomed_in then
+        -- Deploy to map cursor position
+        landing_pos.x = player.position.x + math.random(-5, 5)
+        landing_pos.y = player.position.y + math.random(-5, 5)
+    elseif player.character then
+        -- Deploy to player character position
+        landing_pos.x = player.character.position.x + math.random(-5, 5)
+        landing_pos.y = player.character.position.y + math.random(-5, 5)
+    else
+        -- Fallback to current position
+        landing_pos.x = player.position.x + math.random(-5, 5)
+        landing_pos.y = player.position.y + math.random(-5, 5)
+    end
+    
+    -- Ensure valid tile
+    local function is_walkable_tile(position)
+        local tile = target_surface.get_tile(position.x, position.y)
+        return tile and tile.valid and not tile.prototype.fluid
+    end
+    
+    local valid_positions = {}
+    local radius = 5
+    for dx = -radius, radius do
+        for dy = -radius, radius do
+            local check_pos = {x = landing_pos.x + dx, y = landing_pos.y + dy}
+            if is_walkable_tile(check_pos) then
+                table.insert(valid_positions, check_pos)
+            end
+        end
+    end
+    
+    if #valid_positions > 0 then
+        local random_index = math.random(1, #valid_positions)
+        landing_pos = valid_positions[random_index]
+    else
+        return
+    end
+    
+    -- Remove bots from hub inventory and track them
+    local collected_bots = {}
+    for _, bot_data in ipairs(selected_bots) do
+        local needed = bot_data.count
+        
+        for i = 1, #hub_inventory do
+            if needed <= 0 then break end
+            
+            local stack = hub_inventory[i]
+            if stack and stack.valid_for_read and stack.name == bot_data.name then
+                local stack_quality = get_quality_name(stack.quality)
+                
+                if stack_quality == bot_data.quality then
+                    local to_take = math.min(stack.count, needed)
+                    
+                    -- Track what we're taking
+                    table.insert(collected_bots, {
+                        name = bot_data.name,
+                        quality = stack.quality,  -- Store actual quality object
+                        count = to_take
+                    })
+                    
+                    -- Remove from hub
+                    stack.count = stack.count - to_take
+                    needed = needed - to_take
+                end
+            end
+        end
+    end
+    
+    -- Create cargo pod
+    local cargo_pod = hub.create_cargo_pod()
+    if not cargo_pod then
+        player.print("Failed to create cargo pod")
+        return
+    end
+
+    -- Get cargo pod inventory
+    local pod_inventory = cargo_pod.get_inventory(defines.inventory.chest)
+    if not pod_inventory then
+        player.print("Failed to access cargo pod inventory")
+        cargo_pod.destroy()
+        return
+    end
+
+    -- Add bots to pod inventory
+    for _, bot_data in ipairs(collected_bots) do
+        pod_inventory.insert({
+            name = bot_data.name,
+            quality = bot_data.quality,
+            count = bot_data.count
+        })
+    end
+    
+    -- Detect same-surface deployment
+    local actual_surface = target_surface
+    local actual_position = landing_pos
+    local is_same_surface = (target_surface == hub.surface)
+    local temp_destination_surface = actual_surface
+    
+    if is_same_surface then
+        local nauvis = game.surfaces["nauvis"]
+        if nauvis and nauvis ~= actual_surface then
+            temp_destination_surface = nauvis
+        else
+            for _, surface in pairs(game.surfaces) do
+                if surface ~= actual_surface then
+                    temp_destination_surface = surface
+                    break
+                end
+            end
+        end
+    end
+    
+    -- Set cargo pod destination
+    cargo_pod.cargo_pod_destination = {
+        type = defines.cargo_destination.surface,
+        surface = temp_destination_surface,
+        position = actual_position,
+        land_at_exact_position = true
+    }
+    
+    cargo_pod.cargo_pod_origin = hub
+    
+    -- Store deployment data
+    if not storage.pending_pod_deployments then
+        storage.pending_pod_deployments = {}
+    end
+    
+    local pod_id = player.index .. "_supplies_" .. game.tick
+    
+    storage.pending_pod_deployments[pod_id] = {
+        pod = cargo_pod,
+        player = player,
+        is_supplies_deployment = true,
+        bots = collected_bots,
+        actual_surface = is_same_surface and actual_surface or nil,
+        actual_position = is_same_surface and actual_position or nil
+    }
 end
 
 return deployment

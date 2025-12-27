@@ -4,6 +4,7 @@ local deployment = require("scripts-sa.deployment")
 local vehicles_list = require("scripts-sa.vehicles-list")
 local platform_gui = require("scripts-sa.platform-gui")
 local equipment_grid_fill = require("scripts-sa.equipment-grid-fill")
+local container_deployment = require("scripts-sa.container-deployment")
 local api = require("scripts-sa.api")
 
 -- Debug logging function
@@ -74,15 +75,15 @@ script.on_event(defines.events.on_gui_click, function(event)
         local section_table
         local current = element
         while current and current.valid do
-            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" then
+            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" or current.name == "supplies_table" then
                 section_table = current
                 break
             end
             current = current.parent
         end
-        
+
         if not section_table then
-            debug_log("Could not find section table (utilities_table, ammo_table, fuel_table, or equipment_table) for stack button")
+            debug_log("Could not find section table (utilities_table, ammo_table, fuel_table, equipment_table, or supplies_table) for stack button")
             return
         end
         
@@ -122,6 +123,22 @@ script.on_event(defines.events.on_gui_click, function(event)
         else
             debug_log("Could not find slider or text field: " .. slider_name .. ", " .. text_field_name)
         end
+    end
+
+    if element.name and element.name:match("^" .. container_deployment.BUTTON_PREFIX) then
+        local player = game.get_player(event.player_index)
+        if player and player.valid and element.tags then
+            container_deployment.on_button_click(player, element.name, element.tags)
+        end
+        return
+    end
+    
+    if element.name == "confirm_deployment_button" then
+        local player = game.get_player(event.player_index)
+        if player and player.valid then
+            container_deployment.on_confirm_deployment(player)
+        end
+        return
     end
     
     -- Check for platform deploy button click
@@ -199,6 +216,14 @@ end)
 script.on_event(defines.events.on_gui_value_changed, function(event)
     local element = event.element
     if not element or not element.valid then return end
+
+    if element.name == "deployment_amount_slider" then
+        local player = game.players[event.player_index]
+        if player and player.valid then
+            container_deployment.on_slider_changed(player, element)
+        end
+        return  -- Important: return here so we don't continue to pattern matching
+    end
     
     -- Check if this is one of our sliders
     local pattern = "^slider_(.+)_(.+)$"
@@ -219,15 +244,15 @@ script.on_event(defines.events.on_gui_value_changed, function(event)
         local section_table
         local current = element
         while current and current.valid do
-            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" then
+            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" or current.name == "supplies_table" then
                 section_table = current
                 break
             end
             current = current.parent
         end
-        
+
         if not section_table then
-            debug_log("Could not find section table (utilities_table, ammo_table, fuel_table, or equipment_table) for slider")
+            debug_log("Could not find section table (utilities_table, ammo_table, fuel_table, equipment_table, or supplies_table) for slider")
             return
         end
         
@@ -252,6 +277,7 @@ script.on_event(defines.events.on_gui_value_changed, function(event)
         else
             debug_log("Could not find text field: " .. text_field_name)
         end
+        
     end
 end)
 
@@ -259,6 +285,14 @@ end)
 script.on_event(defines.events.on_gui_text_changed, function(event)
     local element = event.element
     if not element or not element.valid then return end
+
+    if element.name == "deployment_amount_textfield" then
+        local player = game.players[event.player_index]
+        if player and player.valid then
+            container_deployment.on_textfield_changed(player, element)
+        end
+        return
+    end
     
     -- Check if this is one of our text fields
     local pattern = "^text_(.+)_(.+)$"
@@ -276,13 +310,13 @@ script.on_event(defines.events.on_gui_text_changed, function(event)
         local items_table
         local current = element
         while current and current.valid do
-            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" or current.name == "extras_table" then
+            if current.name == "utilities_table" or current.name == "ammo_table" or current.name == "fuel_table" or current.name == "equipment_table" or current.name == "extras_table" or current.name == "supplies_table" then
                 items_table = current
                 break
             end
             current = current.parent
         end
-        
+
         if not items_table then
             debug_log("Could not find items_table for text field")
             return
@@ -357,6 +391,8 @@ script.on_event(defines.events.on_gui_closed, function(event)
             button_frame.destroy()
         end
     end
+
+    container_deployment.remove_gui(player)
     
     -- Clear stored vehicle data
     storage.current_equipment_grid_vehicle = nil
@@ -372,6 +408,19 @@ script.on_event(defines.events.on_gui_opened, function(event)
     
     -- Create equipment grid fill button immediately
     equipment_grid_fill.get_or_create_fill_button(player)
+
+    local opened = player.opened
+    if opened and opened.valid then
+        -- Check if it's a container (chest, cargo wagon, etc.)
+        local success, is_container = pcall(function()
+            return opened.get_inventory(defines.inventory.chest) ~= nil
+        end)
+        
+        if success and is_container then
+            -- Try to create container deployment GUI
+            container_deployment.get_or_create_gui(player, opened)
+        end
+    end
     
     -- Check what was opened
     local opened = player.opened
