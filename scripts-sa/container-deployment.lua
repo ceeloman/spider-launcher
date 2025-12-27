@@ -910,7 +910,7 @@ function container_deployment.deploy_vehicle(player, container, tags, quantity)
     end
     
     if deployed > 0 then
-        player.print("Deployed " .. deployed .. " " .. (tags.item_name or "vehicle"))
+        --player.print("Deployed " .. deployed .. " " .. (tags.item_name or "vehicle"))
     else
         player.print("Failed to deploy vehicle - no space at container")
     end
@@ -994,7 +994,7 @@ function container_deployment.deploy_bot(player, container, tags, quantity)
         if sample_network and sample_network.type then
             message = message .. " → " .. sample_network.type .. " network"
         end
-        player.print(message)
+        --player.print(message)
     else
         player.print("Failed to deploy bots")
     end
