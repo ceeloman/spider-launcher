@@ -1,5 +1,13 @@
 ---------------------------------------------------------------------------------------------------
-Version: 2.9.6
+Version: 2.9.8
+Date: 2025-12-27
+  Bugfixes:
+    - Fixed deployment menu not opening when clicking vehicle deploy buttons
+    - Fixed platform deployment button not appearing when opening platform hub
+    - Fixed "No vehicles available" error when returning from extras menu to vehicle list
+    - Fixed vehicle revalidation to prevent deployment conflicts in multiplayer
+---------------------------------------------------------------------------------------------------
+Version: 2.9.7
 Date: 2025-12-27
   Features:
     - Remote Container Deployment

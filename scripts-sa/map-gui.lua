@@ -476,6 +476,10 @@ function map_gui.show_deployment_menu(player, vehicles)
         return
     end
 
+    -- Store vehicles for this player so button click handlers can find them
+    storage.deployment_vehicles = storage.deployment_vehicles or {}
+    storage.deployment_vehicles[player.index] = vehicles
+
     local frame = player.gui.screen.add{
         type = "frame",
         name = "spidertron_deployment_frame",
@@ -1928,8 +1932,8 @@ function map_gui.on_gui_click(event)
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
         
-        -- Retrieve the stored vehicles list and reopen deployment menu
-        local vehicles = storage.spidertrons
+        -- CHANGED: Re-scan for vehicles instead of using storage.spidertrons
+        local vehicles = map_gui.find_orbital_vehicles(player.surface)
         if vehicles and #vehicles > 0 then
             map_gui.show_deployment_menu(player, vehicles)
         else
@@ -1944,13 +1948,13 @@ function map_gui.on_gui_click(event)
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
         
-        -- Retrieve the stored vehicles list
-        local vehicles = storage.spidertrons
+        -- CHANGED: Re-scan for vehicles instead of using stale list
+        local vehicles = map_gui.find_orbital_vehicles(player.surface)
         if vehicles and #vehicles > 0 then
             -- Reopen the deployment menu
             map_gui.show_deployment_menu(player, vehicles)
         else
-            player.print("Error: No vehicles available")
+            player.print("No vehicles available")
         end
         return
     end
@@ -2020,12 +2024,15 @@ function map_gui.on_gui_click(event)
         return
     end
     
+    -- Handle deploy to target button
     local target_index_str = string.match(element.name, "^deploy_target_(%d+)$")
     if target_index_str then
         local index = tonumber(target_index_str)
 
-        if index and storage.spidertrons and storage.spidertrons[index] then
-            local vehicle = storage.spidertrons[index]
+        if index and storage.deployment_vehicles and 
+           storage.deployment_vehicles[player.index] and 
+           storage.deployment_vehicles[player.index][index] then
+            local vehicle = storage.deployment_vehicles[player.index][index]
 
             if player.gui.screen["spidertron_deployment_frame"] then
                 player.gui.screen["spidertron_deployment_frame"].destroy()
@@ -2036,12 +2043,15 @@ function map_gui.on_gui_click(event)
         return
     end
 
+    -- Handle deploy to player button
     local player_index_str = string.match(element.name, "^deploy_player_(%d+)$")
     if player_index_str then
         local index = tonumber(player_index_str)
 
-        if index and storage.spidertrons and storage.spidertrons[index] then
-            local vehicle = storage.spidertrons[index]
+        if index and storage.deployment_vehicles and 
+           storage.deployment_vehicles[player.index] and 
+           storage.deployment_vehicles[player.index][index] then
+            local vehicle = storage.deployment_vehicles[player.index][index]
 
             if player.gui.screen["spidertron_deployment_frame"] then
                 player.gui.screen["spidertron_deployment_frame"].destroy()

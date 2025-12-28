@@ -403,8 +403,12 @@ script.on_event(defines.events.on_gui_opened, function(event)
     local player = game.get_player(event.player_index)
     if not player or not player.valid then return end
     
-    -- Try to create/update platform deploy button immediately
-    platform_gui.get_or_create_deploy_button(player)
+    -- Store the opened entity for next tick processing
+    storage.pending_grid_open = storage.pending_grid_open or {}
+    storage.pending_grid_open[player.index] = {
+        opened = event.entity,
+        tick = game.tick
+    }
     
     -- Create equipment grid fill button immediately
     equipment_grid_fill.get_or_create_fill_button(player)
@@ -540,6 +544,21 @@ script.on_event(defines.events.on_gui_opened, function(event)
 end)
 
 script.on_event(defines.events.on_tick, function(event)
+    -- Handle pending GUI opens (for platform button)
+    if storage.pending_grid_open then
+        for player_index, data in pairs(storage.pending_grid_open) do
+            if game.tick > data.tick then  -- Wait one tick
+                local player = game.get_player(player_index)
+                if player and player.valid then
+                    -- Pass the entity that was opened
+                    platform_gui.get_or_create_deploy_button(player, data.opened)
+                    equipment_grid_fill.get_or_create_fill_button(player)
+                end
+                storage.pending_grid_open[player_index] = nil
+            end
+        end
+    end
+    
     -- Handle pending deployments
     if storage.pending_deployment then
         for player_index, data in pairs(storage.pending_deployment) do
