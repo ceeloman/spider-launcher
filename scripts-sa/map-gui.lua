@@ -712,7 +712,7 @@ function map_gui.show_deployment_menu(player, vehicles)
     local supplies_tab = tabbed_pane.add{
         type = "tab",
         name = "supplies_tab",
-        caption = "[img=item/construction-robot] Supplies",
+        caption = "[img=item/construction-robot] Robots",
         tooltip = "Deploy construction and logistic robots"
     }
     
@@ -733,7 +733,7 @@ function map_gui.show_deployment_menu(player, vehicles)
     
     local info_label = info_flow.add{
         type = "label",
-        caption = "Deploy robots directly to the surface. Robots will automatically join the nearest roboport network.",
+        caption = "Deploy robots directly to the surface. Remotely open the Cargo Pod to deploy the robots. Once deployed they will automatically join any roboport network if they are range.",
         style = "label"
     }
     info_label.style.single_line = false
@@ -1967,8 +1967,10 @@ function map_gui.on_gui_click(event)
     local edit_grid_index_str = string.match(element.name, "^edit_equipment_grid_(%d+)$")
     if edit_grid_index_str then
         local index = tonumber(edit_grid_index_str)
-        if storage.spidertrons and storage.spidertrons[index] then
-            local vehicle = storage.spidertrons[index]
+        if storage.deployment_vehicles and 
+        storage.deployment_vehicles[player.index] and 
+        storage.deployment_vehicles[player.index][index] then
+            local vehicle = storage.deployment_vehicles[player.index][index]
             
             storage.current_equipment_grid_vehicle = vehicle
             
@@ -1997,12 +1999,8 @@ function map_gui.on_gui_click(event)
             
             local grid = vehicle_stack.grid
             if not grid then
-                local success, created_grid = pcall(function()
-                    return vehicle_stack.create_grid()
-                end)
-                if success and created_grid then
-                    grid = created_grid
-                else
+                grid = vehicle_stack.create_grid()
+                if not grid then
                     player.print("Error: Failed to create equipment grid")
                     return
                 end

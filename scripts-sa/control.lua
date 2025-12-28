@@ -403,12 +403,16 @@ script.on_event(defines.events.on_gui_opened, function(event)
     local player = game.get_player(event.player_index)
     if not player or not player.valid then return end
     
-    -- Store the opened entity for next tick processing
-    storage.pending_grid_open = storage.pending_grid_open or {}
-    storage.pending_grid_open[player.index] = {
-        opened = event.entity,
-        tick = game.tick
-    }
+    -- Only try to create platform button if we're opening a platform hub
+    if event.entity and event.entity.valid and 
+       (event.entity.type == "space-platform-hub" or event.entity.name == "space-platform-hub") then
+        -- Store the opened entity for next tick processing
+        storage.pending_grid_open = storage.pending_grid_open or {}
+        storage.pending_grid_open[player.index] = {
+            opened = event.entity,
+            tick = game.tick
+        }
+    end
     
     -- Create equipment grid fill button immediately
     equipment_grid_fill.get_or_create_fill_button(player)

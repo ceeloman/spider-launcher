@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 2.9.10
+Date: 2025-12-27
+  Bugfixes:
+    - Change in mod-data storage resulted in the deployment menu equipment button to not work properly. Fixed with the correct mod-data
+  Changes:
+    - Updates the supplies deployment tab to Robots, and corrected the robot deployment information
+---------------------------------------------------------------------------------------------------
 Version: 2.9.8
 Date: 2025-12-27
   Bugfixes:
