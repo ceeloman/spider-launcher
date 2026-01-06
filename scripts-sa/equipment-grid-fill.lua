@@ -896,11 +896,11 @@ function equipment_grid_fill.get_or_create_fill_button(player)
     -- Button always shows, but tooltip indicates how many can be filled
     local tooltip_text = ""
     if fillable_count > 0 then
-        tooltip_text = {"", "Fill ", fillable_count, " equipment ghost(s) from inventory"}
+        tooltip_text = {"string-mod-setting.fill-ghosts", fillable_count}
     elseif #ghosts > 0 then
-        tooltip_text = {"", "No matching equipment items in inventory (", #ghosts, " ghost(s) need filling)"}
+        tooltip_text = {"string-mod-setting.no-matching-items", #ghosts}
     else
-        tooltip_text = "Confirm Equipment Loadout"
+        tooltip_text = {"string-mod-setting.confirm-loadout"}
     end
     
     local fill_button = button_flow.add{

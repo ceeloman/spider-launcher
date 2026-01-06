@@ -1,5 +1,10 @@
 ---------------------------------------------------------------------------------------------------
-Version: 2.9.10
+Version: 2.9.83
+Date: 2026-01-06
+  Locale:
+    - Hardcoded values have been added to the locale file
+---------------------------------------------------------------------------------------------------
+Version: 2.9.82
 Date: 2025-12-27
   Bugfixes:
     - Change in mod-data storage resulted in the deployment menu equipment button to not work properly. Fixed with the correct mod-data

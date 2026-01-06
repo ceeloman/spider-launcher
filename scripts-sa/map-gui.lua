@@ -5,10 +5,7 @@ local api = require("scripts-sa.api")
 
 local map_gui = {}
 
--- ================F============================================================
--- HELPER FUNCTIONS
--- ============================================================================
-
+-- ================HELPER FUNCTIONS============================================================
 -- Check if a sprite exists
 local function sprite_exists(sprite_name)
     if not sprite_name then return false end
@@ -27,7 +24,7 @@ local function get_sprite_name(item_name)
     return custom_sprite
 end
 
---  Capitalize the first letter of a string something like "spidertron" becomes "Spidertron"
+-- Capitalize the first letter of a string
 local function capitalize_first(str)
     return str:gsub("^%l", string.upper)
 end
@@ -120,7 +117,7 @@ local function list_match_list(list, list_2)
     return false
 end
 
--- Helper function to add item entry (extracted from show_extras_menu)
+-- Helper function to add item entry
 local function add_item_entry(items_table, item, item_info)
     if item_info and item_info.total > 0 then
         local qualities = {}
@@ -180,7 +177,7 @@ local function add_item_entry(items_table, item, item_info)
                     type = "sprite-button",
                     name = "stack_" .. item.name .. "_" .. quality_data.name,
                     sprite = "ovd_stack",
-                    tooltip = "Add 1 stack (" .. stack_size .. " items)",
+                    tooltip = {"string-mod-setting.add-stack", stack_size},
                     tags = {
                         action = "add_stack",
                         item_name = item.name,
@@ -190,8 +187,8 @@ local function add_item_entry(items_table, item, item_info)
                     }
                 }
                 stack_button.style.size = 24
-                slider.tooltip = "Slide to select quantity"
-                count_textfield.tooltip = "Type quantity or use slider"
+                slider.tooltip = {"string-mod-setting.slide-to-select-quantity"}
+                count_textfield.tooltip = {"string-mod-setting.type-quantity-or-use-slider"}
                 count_textfield.tags = {max_value = quality_data.count}
                 slider.tags = {
                     item_name = item.name,
@@ -209,14 +206,14 @@ local function add_item_entry(items_table, item, item_info)
         local sprite = left_flow.add{
             type = "sprite-button",
             sprite = get_sprite_name(item.name),
-            tooltip = "No " .. item.display_name .. " available",
+            tooltip = {"string-mod-setting.no-items-available", item.display_name},
             enabled = false
         }
         sprite.style.size = 28
         left_flow.add{
             type = "label",
             caption = item.display_name .. " (0 available)",
-            tooltip = "No " .. item.display_name .. " available"
+            tooltip = {"string-mod-setting.no-items-available", item.display_name}
         }.style.font_color = {r=0.5, g=0.5, b=0.5}
         local right_flow = items_table.add{
             type = "flow",
@@ -227,7 +224,7 @@ local function add_item_entry(items_table, item, item_info)
         right_flow.add{
             type = "label",
             caption = "Not available",
-            tooltip = "No " .. item.display_name .. " available"
+            tooltip = {"string-mod-setting.no-items-available", item.display_name}
         }.style.font_color = {r=0.5, g=0.5, b=0.5}
     end
 end
@@ -301,7 +298,7 @@ function map_gui.find_orbital_vehicles(player_surface)
                                             quality = stack.quality
                                         end
                                         
-                                        local tooltip = "Platform: " .. surface.name .. "\nSlot: " .. i
+                                        local tooltip = {"", "Platform: ", surface.name, "\nSlot: ", i}
                                         local entity_name = stack.name
                                         
                                         table.insert(available_vehicles, {
@@ -521,7 +518,7 @@ function map_gui.show_deployment_menu(player, vehicles)
         sprite = "utility/close",
         hovered_sprite = "utility/close_black",
         clicked_sprite = "utility/close_black",
-        tooltip = "Close deployment menu",
+        tooltip = {"string-mod-setting.close_extras_menu_btn"},
         style = "frame_action_button"
     }
     
@@ -555,22 +552,15 @@ function map_gui.show_deployment_menu(player, vehicles)
         end
     end
     
-    -- local caption_text = nil
-    -- if type(planet_display_name) == "table" then
-    --     caption_text = {"", "Select vehicle to deploy from ", planet_display_name, " orbit"}
-    -- else
-    --     caption_text = "Deploy from orbit above " .. planet_display_name
-    -- end
-
     frame.add{
         type = "label",
-        caption = "Orbital Deployment",
+        caption = {"string-mod-setting.orbital-deployment"},
         style = "caption_label"
     }
 
     -- frame.add{
     --     type = "label",
-    --     caption = caption_text,
+    --     caption = {"", "Select vehicle to deploy from ", planet_display_name, " orbit"},
     --     style = "caption_label"
     -- }
     
@@ -587,7 +577,7 @@ function map_gui.show_deployment_menu(player, vehicles)
         type = "tab",
         name = "vehicles_tab",
         caption = "[img=item/spidertron] Vehicles",
-        tooltip = "Deploy vehicles from orbit"
+        tooltip = {"string-mod-setting.deploy-from-orbit", planet_display_name}
     }
     
     local vehicles_content = tabbed_pane.add{
@@ -634,7 +624,7 @@ function map_gui.show_deployment_menu(player, vehicles)
         local name_label = row_container.add{
             type = "label",
             caption = vehicle.name,
-            tooltip = "Located on " .. vehicle.platform_name
+            tooltip = {"string-mod-setting.vehicle-located-on", vehicle.platform_name}
         }
         name_label.style.minimal_width = 176
         
@@ -665,7 +655,7 @@ function map_gui.show_deployment_menu(player, vehicles)
                 type = "sprite-button",
                 name = "edit_equipment_grid_" .. i,
                 sprite = "utility/empty_armor_slot",
-                tooltip = "Remotely configure vehicle equipment grid"
+                tooltip = {"string-mod-setting.remotely-configure-grid"}
             }
             edit_grid_button.style.size = 28
         end
@@ -680,7 +670,7 @@ function map_gui.show_deployment_menu(player, vehicles)
                 type = "sprite-button",
                 name = "deploy_target_" .. i,
                 sprite = "utility/shoot_cursor_green",
-                tooltip = "Click to deploy here - Opens the loadout menu before deployment"
+                tooltip = {"string-mod-setting.deploy-to-target"}
             }
             target_button.style.size = 28
             
@@ -689,7 +679,7 @@ function map_gui.show_deployment_menu(player, vehicles)
                     type = "sprite-button",
                     name = "deploy_player_" .. i,
                     sprite = "entity/character",
-                    tooltip = "Deploy to your character's location"
+                    tooltip = {"string-mod-setting.deploy-to-player"}
                 }
                 player_button.style.size = 28
             end
@@ -698,7 +688,7 @@ function map_gui.show_deployment_menu(player, vehicles)
                 type = "sprite-button",
                 name = "deploy_player_" .. i,
                 sprite = "entity/character",
-                tooltip = "Deploy to your character's location"
+                tooltip = {"string-mod-setting.deploy-to-player"}
             }
             player_button.style.size = 28
         end
@@ -713,7 +703,7 @@ function map_gui.show_deployment_menu(player, vehicles)
         type = "tab",
         name = "supplies_tab",
         caption = "[img=item/construction-robot] Robots",
-        tooltip = "Deploy construction and logistic robots"
+        tooltip = {"string-mod-setting.deploy-supplies"}
     }
     
     local supplies_content = tabbed_pane.add{
@@ -733,7 +723,7 @@ function map_gui.show_deployment_menu(player, vehicles)
     
     local info_label = info_flow.add{
         type = "label",
-        caption = "Deploy robots directly to the surface. Remotely open the Cargo Pod to deploy the robots. Once deployed they will automatically join any roboport network if they are range.",
+        caption = {"string-mod-setting.remotely-open-cargo-pod", "\n", "string-mod-setting.automatically-join-network"},
         style = "label"
     }
     info_label.style.single_line = false
@@ -837,11 +827,11 @@ function map_gui.show_deployment_menu(player, vehicles)
     local deploy_supplies_btn = supplies_button_flow.add{
         type = "button",
         name = "deploy_supplies_btn",
-        caption = "Deploy Supplies",
+        caption = {"string-mod-setting.deploy-supplies"},
         style = "confirm_button"
     }
     deploy_supplies_btn.style.minimal_width = 60
-    deploy_supplies_btn.tooltip = "Deploy selected robots to the surface"
+    deploy_supplies_btn.tooltip = {"string-mod-setting.deploy-supplies"}
     
     tabbed_pane.add_tab(supplies_tab, supplies_content)
     
@@ -1103,7 +1093,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         sprite = "utility/close",
         hovered_sprite = "utility/close_black",
         clicked_sprite = "utility/close_black",
-        tooltip = "Back to vehicle selection",
+        tooltip = {"string-mod-setting.close_extras_menu_btn"},
         style = "frame_action_button"
     }
     
@@ -1113,12 +1103,12 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     }
     info_flow.add{
         type = "label",
-        caption = "Configure loadout for " .. vehicle_data.name,
+        caption = {"string-mod-setting.configure-loadout-for", vehicle_data.name},
         style = "caption_label"
     }
     info_flow.add{
         type = "label",
-        caption = "Select items to include with deployment",
+        caption = {"string-mod-setting.select-items-to-include-with-deployment"},
         style = "label"
     }.style.font_color = {r=0.7, g=0.7, b=0.7}
     
@@ -1131,7 +1121,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         type = "tab",
         name = "utilities_tab",
         caption = "[img=item/repair-pack] Utilities",
-        tooltip = "Construction bots and repair packs"
+        --tooltip = {"string-mod-setting.utilities"} not needed
     }
     local utilities_content = tabbed_pane.add{
         type = "flow",
@@ -1162,7 +1152,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             type = "tab",
             name = "ammo_tab",
             caption = "[img=item/firearm-magazine] Ammo",
-            tooltip = "Ammunition for vehicle weapons"
+            tooltip = {"string-mod-setting.ammo"}
         }
         local ammo_content = tabbed_pane.add{
             type = "flow",
@@ -1190,7 +1180,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         else
             ammo_scroll_pane.add{
                 type = "label",
-                caption = "No Ammo items available"
+                caption = {"string-mod-setting.no-ammo-available"},
             }.style.font_color = {r=0.5, g=0.5, b=0.5}
         end
         tabbed_pane.add_tab(ammo_tab, ammo_content)
@@ -1201,7 +1191,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             type = "tab",
             name = "fuel_tab",
             caption = "[img=item/rocket-fuel] Fuel",
-            tooltip = "Fuel for vehicle burner"
+            tooltip = {"string-mod-setting.fuel"}
         }
         local fuel_content = tabbed_pane.add{
             type = "flow",
@@ -1216,6 +1206,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         }
         fuel_scroll_pane.style.maximal_height = 300
         fuel_scroll_pane.style.minimal_width = 500
+        
         if #fuel_list > 0 then
             local fuel_table = fuel_scroll_pane.add{
                 type = "table",
@@ -1229,7 +1220,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         else
             fuel_scroll_pane.add{
                 type = "label",
-                caption = "No Fuel items available"
+                caption = {"string-mod-setting.no-fuel-available"},
             }.style.font_color = {r=0.5, g=0.5, b=0.5}
         end
         tabbed_pane.add_tab(fuel_tab, fuel_content)
@@ -1240,7 +1231,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             type = "tab",
             name = "equipment_tab",
             caption = "[img=item/personal-roboport-equipment] Equipment",
-            tooltip = "Equipment grid modules"
+            --tooltip = {"string-mod-setting.equipment"} -- not needed
         }
         local equipment_content = tabbed_pane.add{
             type = "flow",
@@ -1389,7 +1380,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         else
             local no_equipment_label = equipment_list_flow.add{
                 type = "label",
-                caption = "No equipment installed",
+                caption = {"string-mod-setting.no-equipment-available"},
                 style = "caption_label"
             }
             no_equipment_label.style.font_color = {r=0.7, g=0.7, b=0.7}
@@ -1407,7 +1398,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             
             local warning_label = warning_flow.add{
                 type = "label",
-                caption = "[color=yellow]Unfulfilled equipment requests detected. You can deploy anyway, and if the platform has the equipment items, the vehicle will attempt to fill the loadout.[/color]"
+                caption = {"string-mod-setting.unfulfilled-equipment-requests"},
             }
             warning_label.style.single_line = false
             warning_label.style.maximal_width = 480
@@ -1429,12 +1420,12 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         local open_grid_button = button_flow.add{
             type = "button",
             name = "open_equipment_grid_btn",
-            caption = "Manage Equipment Grid",
+            caption = {"string-mod-setting.manage-equipment-grid"},
             style = "button"
         }
         open_grid_button.style.minimal_width = 200
         open_grid_button.style.minimal_height = 40
-        open_grid_button.tooltip = "Configure equipment before deployment"
+        --open_grid_button.tooltip = {"string-mod-setting.manage-equipment-grid"} not needed
         
         tabbed_pane.add_tab(equipment_tab, equipment_content)
     end
@@ -1455,8 +1446,8 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     local back_button = button_flow.add{
         type = "button",
         name = "back_to_deployment_menu_btn",
-        caption = "Back",
-        tooltip = "Return to deployment menu",
+        caption = {"string-mod-setting.back-to-deployment-menu-btn"},
+        tooltip = {"string-mod-setting.return-to-deployment-menu"},
         style = "back_button"
     }
     
@@ -1468,8 +1459,8 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     button_flow.add{
         type = "button",
         name = "confirm_deploy_btn",
-        caption = "Deploy",
-        tooltip = "Deploy vehicle",
+        caption = {"string-mod-setting.deploy"},
+        tooltip = {"string-mod-setting.confirm-deployment"},
         style = "confirm_button"
     }
 end
@@ -1640,7 +1631,7 @@ function handle_extras_menu_clicks(event)
         -- REVALIDATION: Check if vehicle still exists
         local hub = vehicle_data.hub
         if not hub or not hub.valid then
-            player.print("[color=red]Deployment failed: Platform hub no longer available[/color]")
+            player.print({"string-mod-setting.error-no-platform-hub"})
             if player.gui.screen["spidertron_extras_frame"] then
                 player.gui.screen["spidertron_extras_frame"].destroy()
             end
@@ -1653,7 +1644,7 @@ function handle_extras_menu_clicks(event)
         local inv_type = vehicle_data.inv_type or defines.inventory.chest
         local hub_inventory = hub.get_inventory(inv_type)
         if not hub_inventory then
-            player.print("[color=red]Deployment failed: Cannot access platform inventory[/color]")
+            player.print({"string-mod-setting.error-cannot-access-inventory"})
             if player.gui.screen["spidertron_extras_frame"] then
                 player.gui.screen["spidertron_extras_frame"].destroy()
             end
@@ -1667,7 +1658,7 @@ function handle_extras_menu_clicks(event)
         local stack = hub_inventory[inventory_slot]
         
         if not stack or not stack.valid_for_read or stack.name ~= vehicle_data.vehicle_name then
-            player.print("[color=red]This vehicle was already deployed by another player[/color]")
+            player.print({"string-mod-setting.error-vehicle-deployed-by-another-player"})
             if player.gui.screen["spidertron_extras_frame"] then
                 player.gui.screen["spidertron_extras_frame"].destroy()
             end
@@ -1729,7 +1720,7 @@ function handle_extras_menu_clicks(event)
             
             if not items_valid then
                 -- Show error and stay in extras menu
-                local error_msg = "[color=red]Some selected items are no longer available:[/color]"
+                local error_msg = {"string-mod-setting.error-items-not-available"}
                 for _, item in ipairs(missing_items) do
                     error_msg = error_msg .. "\n" .. item.name .. " (" .. item.quality .. "): need " .. item.needed .. ", have " .. item.available
                 end
@@ -1964,61 +1955,58 @@ function map_gui.on_gui_click(event)
         return
     end
 
+    -- Handle equipment grid edit button
     local edit_grid_index_str = string.match(element.name, "^edit_equipment_grid_(%d+)$")
     if edit_grid_index_str then
         local index = tonumber(edit_grid_index_str)
-        if storage.deployment_vehicles and 
-        storage.deployment_vehicles[player.index] and 
-        storage.deployment_vehicles[player.index][index] then
-            local vehicle = storage.deployment_vehicles[player.index][index]
-            
-            storage.current_equipment_grid_vehicle = vehicle
-            
-            local hub = vehicle.hub
-            if not hub or not hub.valid then
-                return
-            end
-            
-            local inv_type = vehicle.inv_type or defines.inventory.chest
-            local hub_inventory = hub.get_inventory(inv_type)
-            if not hub_inventory then
-                return
-            end
-            
-            local vehicle_stack = hub_inventory[vehicle.inventory_slot]
-            if not vehicle_stack then
-                return
-            end
-            if not vehicle_stack.valid_for_read then
-                return
-            end
-            
-            if player.gui.screen["spidertron_deployment_frame"] then
-                player.gui.screen["spidertron_deployment_frame"].destroy()
-            end
-            
-            local grid = vehicle_stack.grid
-            if not grid then
-                grid = vehicle_stack.create_grid()
-                if not grid then
-                    player.print("Error: Failed to create equipment grid")
-                    return
-                end
-            end
-            
-            if not grid or not grid.valid then
-                player.print("Error: Grid is invalid")
-                return
-            end
-            
-            player.opened = grid
-            
-            local opened = player.opened
-            
-            if not opened or opened ~= grid then
-                player.opened = vehicle_stack
-            end
+        if not index then return end
+
+        local deployment_vehicles = storage.deployment_vehicles and storage.deployment_vehicles[player.index]
+        if not deployment_vehicles or not deployment_vehicles[index] then return end
+
+        local vehicle = deployment_vehicles[index]
+        local hub = vehicle.hub
+        if not hub or not hub.valid then return end
+
+        local inv_type = vehicle.inv_type or defines.inventory.chest
+        local hub_inventory = hub.get_inventory(inv_type)
+        if not hub_inventory then return end
+
+        local vehicle_stack = hub_inventory[vehicle.inventory_slot]
+        if not vehicle_stack or not vehicle_stack.valid_for_read then return end
+
+        -- Close deployment frame if open
+        if player.gui.screen["spidertron_deployment_frame"] then
+            player.gui.screen["spidertron_deployment_frame"].destroy()
         end
+
+        -- Open the equipment grid
+        local grid = vehicle_stack.grid
+        if not grid then
+            local success, created_grid = pcall(function()
+                return vehicle_stack.create_grid()
+            end)
+            if not success or not created_grid then
+                player.print({"string-mod-setting.error-failed-create-grid"})
+                return
+            end
+            grid = created_grid
+        end
+
+        if not grid or not grid.valid then
+            player.print({"string-mod-setting.error-grid-invalid"})
+            return
+        end
+
+        -- Open the grid in player's interface
+        player.opened = grid
+        
+        -- If that didn't work, try opening the stack directly
+        local opened = player.opened
+        if not opened or opened ~= grid then
+            player.opened = vehicle_stack
+        end
+        
         return
     end
     

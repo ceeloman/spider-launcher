@@ -200,7 +200,7 @@ function container_deployment.get_or_create_gui(player, container)
     
     title_flow.add{
         type = "label",
-        caption = "Remote Deployment",
+        caption = {"string-mod-setting.remote-deployment"},
         style = "frame_title"
     }
     
@@ -442,7 +442,7 @@ function container_deployment.get_or_create_gui(player, container)
     
     local selected_label = selected_item_flow.add{
         type = "label",
-        caption = "Selected:"
+        caption = {"string-mod-setting.selected"},
     }
     selected_label.style.font = "default-semibold"
     
@@ -457,15 +457,15 @@ function container_deployment.get_or_create_gui(player, container)
     
     local selected_item_label = selected_item_flow.add{
         type = "label",
-        name = "deployment_selected_item_name", -- can this be the localised name?
-        caption = "None"
+        name = "deployment_selected_item_name",
+        caption = {"string-mod-setting.none"},
     }
     selected_item_label.style.left_margin = 4
     
     -- Deploy amount slider
     local deploy_amount_label = settings_frame.add{
         type = "label",
-        caption = "Deploy Amount:"
+        caption = {"string-mod-setting.deploy-amount"},
     }
     deploy_amount_label.style.font = "default-semibold"
     deploy_amount_label.style.bottom_margin = 4
@@ -511,7 +511,7 @@ function container_deployment.get_or_create_gui(player, container)
     local confirm_deploy_button = confirm_button_flow.add{
         type = "button",
         name = "confirm_deployment_button",
-        caption = "Deploy",
+        caption = {"string-mod-setting.deploy"},
         style = "confirm_button"
     }
     
@@ -912,7 +912,7 @@ function container_deployment.deploy_vehicle(player, container, tags, quantity)
     if deployed > 0 then
         --player.print("Deployed " .. deployed .. " " .. (tags.item_name or "vehicle"))
     else
-        player.print("Failed to deploy vehicle - no space at container")
+        player.print({"string-mod-setting.deploy-failed"})
     end
     
     -- Refresh GUI
@@ -990,7 +990,7 @@ function container_deployment.deploy_bot(player, container, tags, quantity)
     if deployed > 0 then
         -- Check which network type covers the container position (for message)
         local sample_network = find_network_for_bot(container.surface, container.position, item_name, player.force)
-        local message = "Deployed " .. deployed .. " " .. item_name
+        local message = {"string-mod-setting.deployed", deployed, item_name}
         if sample_network and sample_network.type then
             message = message .. " → " .. sample_network.type .. " network"
         end
