@@ -1,8 +1,6 @@
 -- scripts/deployment.lua
 -- Consolidated version with Space Age and Space Exploration compatibility
 
--- Bug 1: ammo isnt auto added to the vehicle slots 
-
 local deployment = {}
 
 ----------------------------------
@@ -121,6 +119,15 @@ local function return_items_to_hub(hub, item_name, count, quality)
     return inserted
 end
 
+-- Helper to get table keys
+local function table_keys(t)
+    local keys = {}
+    for k, _ in pairs(t) do
+        table.insert(keys, tostring(k))
+    end
+    return keys
+end
+
 -- Helper function to get ammo damage
 local function get_ammo_damage(ammo_name)
     local damage_value = 0
@@ -129,11 +136,14 @@ local function get_ammo_damage(ammo_name)
         local ammo_prototype = prototypes.item[ammo_name]
         if ammo_prototype.type == "ammo" and type(ammo_prototype.get_ammo_type) == "function" then
             local ammo_data = ammo_prototype.get_ammo_type()
-            if ammo_data and ammo_data.action and ammo_data.action.action_delivery and 
-               ammo_data.action.action_delivery.target_effects then
-                for _, effect in pairs(ammo_data.action.action_delivery.target_effects) do
-                    if effect.type == "damage" then
-                        damage_value = damage_value + (effect.damage.amount or 0)
+            if ammo_data then
+                -- Just print the top-level keys to see structure
+                game.print("Ammo data keys: " .. serpent.line(table_keys(ammo_data)))
+                
+                if ammo_data.action then
+                    game.print("Has action, keys: " .. serpent.line(table_keys(ammo_data.action)))
+                    if ammo_data.action.action_delivery then
+                        game.print("Has action_delivery, type: " .. tostring(ammo_data.action.action_delivery.type))
                     end
                 end
             end
@@ -147,11 +157,9 @@ end
 local function get_ammo_category(ammo_name)
     if prototypes.item and prototypes.item[ammo_name] then
         local ammo_prototype = prototypes.item[ammo_name]
-        if ammo_prototype.type == "ammo" and type(ammo_prototype.get_ammo_type) == "function" then
-            local ammo_data = ammo_prototype.get_ammo_type()
-            if ammo_data and ammo_data.category then
-                return ammo_data.category
-            end
+        
+        if ammo_prototype.ammo_category then
+            return ammo_prototype.ammo_category.name
         end
     end
     return nil
@@ -162,7 +170,6 @@ local function find_compatible_slots_by_category(vehicle, ammo_inventory)
     local slots_by_category = {}
     local ammo_slot_count = #ammo_inventory
     
-    -- Define test ammo for different categories
     local test_ammo = {
         ["bullet"] = "firearm-magazine",
         ["cannon-shell"] = "cannon-shell",
@@ -176,8 +183,6 @@ local function find_compatible_slots_by_category(vehicle, ammo_inventory)
         for slot_index = 1, ammo_slot_count do
             local slot = ammo_inventory[slot_index]
             if slot then
-                -- Debug print to check each slot
-                game.print("Checking slot " .. slot_index .. " for category: " .. category)
                 slot.clear()
                 local success = slot.set_stack({
                     name = test_item,
@@ -185,11 +190,6 @@ local function find_compatible_slots_by_category(vehicle, ammo_inventory)
                 })
                 if success then
                     table.insert(slots_by_category[category], slot_index)
-                    -- Debug print to indicate successful insertion
-                    game.print("Slot " .. slot_index .. " is compatible for category: " .. category)
-                else
-                    -- Debug print to indicate failed insertion
-                    game.print("Slot " .. slot_index .. " is not compatible for category: " .. category)
                 end
                 slot.clear()
             end
