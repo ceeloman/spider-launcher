@@ -991,9 +991,9 @@ function container_deployment.deploy_bot(player, container, tags, quantity)
         -- Check which network type covers the container position (for message)
         local sample_network = find_network_for_bot(container.surface, container.position, item_name, player.force)
         local message = {"string-mod-setting.deployed", deployed, item_name}
-        if sample_network and sample_network.type then
-            message = message .. " → " .. sample_network.type .. " network"
-        end
+        -- if sample_network and sample_network.type then
+        --     message = message .. " → " .. sample_network.type .. " network"
+        -- end
         --player.print(message)
     else
         player.print("Failed to deploy bots")

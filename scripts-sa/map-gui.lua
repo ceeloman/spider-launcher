@@ -155,7 +155,7 @@ local function add_item_entry(items_table, item, item_info)
                 }
                 left_flow.style.vertical_align = "center"
                 
-                create_item_icon_with_quality(left_flow, item.name, quality_data, capitalize_first(quality_data.name))
+                create_item_icon_with_quality(left_flow, item.name, quality_data.name, capitalize_first(quality_data.name))
                 
                 left_flow.add{
                     type = "label",
@@ -1050,7 +1050,7 @@ function map_gui.show_deployment_menu(player, vehicles)
         style = "confirm_button"
     }
     deploy_supplies_btn.style.minimal_width = 60
-    deploy_supplies_btn.tooltip = {"string-mod-setting.deploy-supplies"}
+    --deploy_supplies_btn.tooltip = {"string-mod-setting.deploy-supplies"}
     
     tabbed_pane.add_tab(supplies_tab, supplies_content)
     
