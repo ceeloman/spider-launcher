@@ -1,3 +1,4 @@
+-- scripts-se/vehicles-list.lua
 local vehicles_list = {}
 
 -- Excluded vehicle types (e.g., locomotives, wagons)

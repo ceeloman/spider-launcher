@@ -1,6 +1,9 @@
+-- scripts-sa/vehicles-list.lua
 local vehicles_list = {}
 
 -- Excluded vehicle types (e.g., locomotives, wagons)
+-- Probably should exclude locomotives vehicle types, rather than by name
+-- at the same time we only search for cars / spider-vehicles so it shouldnt be an issue
 vehicles_list.excluded_names = {
     ["locomotive"] = true,
     ["cargo-wagon"] = true,

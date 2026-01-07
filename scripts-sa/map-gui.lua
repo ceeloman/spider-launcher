@@ -1,11 +1,18 @@
 -- scripts-sa/map-gui.lua
+-- Consolidated version with Space Age and Space Exploration compatibility
+
 local vehicles_list = require("scripts-sa.vehicles-list")
 local deployment = require("scripts-sa.deployment")
-local api = require("scripts-sa.api")
+
+-- Detect which mod is active
+local is_space_age = script.active_mods["space-age"] ~= nil
+local is_space_exploration = script.active_mods["space-exploration"] ~= nil
+local is_tfmg_active = script.active_mods["TFMG"] ~= nil or script.active_mods["tfmg"] ~= nil
 
 local map_gui = {}
 
 -- ================HELPER FUNCTIONS============================================================
+
 -- Check if a sprite exists
 local function sprite_exists(sprite_name)
     if not sprite_name then return false end
@@ -31,21 +38,30 @@ end
 
 -- Get the quality name from a stack or quality object
 function get_quality_name(stack_or_quality)
-    if not stack_or_quality then return "Normal" end
-    if type(stack_or_quality) == "string" then return stack_or_quality end
-    if stack_or_quality.name then return stack_or_quality.name end
-    return "Normal"
+    if not stack_or_quality then return "normal" end
+    
+    -- Quality is userdata with .name property
+    if type(stack_or_quality) == "userdata" and stack_or_quality.name then
+        return stack_or_quality.name
+    end
+    
+    -- Fallback for string quality names
+    if type(stack_or_quality) == "string" then
+        return stack_or_quality
+    end
+    
+    return "normal"
 end
 
 -- Create a quality overlay sprite on top of an item icon
 local function create_quality_overlay(parent, quality)
-    if quality and quality.name ~= "Normal" then
-        local quality_name = string.lower(quality.name)
+    if quality and get_quality_name(quality) ~= "normal" then
+        local quality_name = string.lower(get_quality_name(quality))
         local overlay_name = "sl-" .. quality_name
         local quality_overlay = parent.add{
             type = "sprite",
             sprite = overlay_name,
-            tooltip = quality.name .. " quality"
+            tooltip = get_quality_name(quality) .. " quality"
         }
         quality_overlay.style.size = 14
         quality_overlay.style.top_padding = 13
@@ -115,6 +131,11 @@ local function list_match_list(list, list_2)
         if match_in_list(list, string) then return true end
     end
     return false
+end
+
+-- SE-SPECIFIC: Helper function to check if a zone type is a space type
+local function is_space_zone_type(zone_type)
+    return zone_type == "orbit" or zone_type == "asteroid-belt" or zone_type == "asteroid-field"
 end
 
 -- Helper function to add item entry
@@ -233,17 +254,12 @@ end
 -- VEHICLE DISCOVERY
 -- ============================================================================
 
--- Find all orbital vehicles on platforms orbiting the player's current planet
-function map_gui.find_orbital_vehicles(player_surface)
+-- SA-SPECIFIC: Find all orbital vehicles on platforms orbiting the player's current planet
+local function find_orbital_vehicles_sa(player_surface)
     local available_vehicles = {}
-    local platform_count = 0
-    local hub_count = 0
-    local inventory_count = 0
     
     for _, surface in pairs(game.surfaces) do
         if surface.platform then
-            platform_count = platform_count + 1
-            
             local is_orbiting_current_planet = false
             
             if surface.platform.space_location then
@@ -264,15 +280,12 @@ function map_gui.find_orbital_vehicles(player_surface)
             
             if is_orbiting_current_planet then
                 if surface.platform.hub and surface.platform.hub.valid then
-                    hub_count = hub_count + 1
                     local hub = surface.platform.hub
                     local processed_slots = {}
                     
                     for _, inv_type in pairs({defines.inventory.chest}) do
                         local inventory = hub.get_inventory(inv_type)
                         if inventory then
-                            inventory_count = inventory_count + 1
-                            
                             for i = 1, #inventory do
                                 local stack = inventory[i]
                                 if stack.valid_for_read then
@@ -288,15 +301,8 @@ function map_gui.find_orbital_vehicles(player_surface)
                                             name = stack.entity_label
                                         end
                                         
-                                        local color = nil
-                                        if stack.entity_color then
-                                            color = stack.entity_color
-                                        end
-                                        
-                                        local quality = nil
-                                        if stack.quality then
-                                            quality = stack.quality
-                                        end
+                                        local color = stack.entity_color
+                                        local quality = stack.quality
                                         
                                         local tooltip = {"", "Platform: ", surface.name, "\nSlot: ", i}
                                         local entity_name = stack.name
@@ -326,6 +332,187 @@ function map_gui.find_orbital_vehicles(player_surface)
     end
     
     return available_vehicles
+end
+
+-- SE-SPECIFIC: Find all orbital vehicles using zone checking
+local function find_orbital_vehicles_se(player_surface, player)
+    local available_vehicles = {}
+    
+    -- Get the player's current zone
+    local player_zone = nil
+    if remote.interfaces["space-exploration"] then
+        player_zone = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = player_surface.index})
+    end
+    
+    if not player_zone then
+        return available_vehicles
+    end
+    
+    -- Determine which space surface to search
+    local target_orbit_surface = nil
+    
+    if is_space_zone_type(player_zone.type) then
+        -- Player is on space surface - use that
+        target_orbit_surface = player_surface
+    elseif player_zone.type == "planet" or player_zone.type == "moon" then
+        -- Player is on planet/moon - find the orbit
+        local planet_name = player_zone.name or player_surface.name
+        local expected_orbit_name = planet_name .. " Orbit"
+        
+        for _, surface in pairs(game.surfaces) do
+            local zone_result = nil
+            if remote.interfaces["space-exploration"] then
+                zone_result = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = surface.index})
+            end
+            
+            if zone_result and is_space_zone_type(zone_result.type) then
+                local parent_matches = false
+                local name_matches = false
+                
+                if zone_result.parent then
+                    parent_matches = (zone_result.parent.name == planet_name)
+                else
+                    if zone_result.type == "orbit" then
+                        local orbit_name = zone_result.name or surface.name
+                        local extracted_planet = orbit_name:gsub("%s+Orbit$", "")
+                        name_matches = (extracted_planet == planet_name)
+                    end
+                end
+                
+                if parent_matches or name_matches or (zone_result.type == "orbit" and surface.name == expected_orbit_name) then
+                    target_orbit_surface = surface
+                    break
+                end
+            end
+        end
+        
+        if not target_orbit_surface then
+            return available_vehicles
+        end
+    else
+        return available_vehicles
+    end
+    
+    -- Search the target space surface for containers
+    if target_orbit_surface then
+        local containers = {}
+        
+        -- Use registered cargo bays if available
+        if storage.cargo_bays then
+            for unit_number, bay_data in pairs(storage.cargo_bays) do
+                if bay_data.entity and bay_data.entity.valid then
+                    if bay_data.surface_index == target_orbit_surface.index then
+                        table.insert(containers, bay_data.entity)
+                    end
+                end
+            end
+        end
+        
+        -- Fallback: search entities
+        if #containers == 0 then
+            local found_containers = target_orbit_surface.find_entities_filtered{
+                name = "ovd-deployment-container"
+            }
+            for _, container in ipairs(found_containers) do
+                if container and container.valid then
+                    table.insert(containers, container)
+                end
+            end
+        end
+        
+        -- Process each container
+        for _, container in ipairs(containers) do
+            if container and container.valid then
+                local processed_slots = {}
+                
+                for _, inv_type in pairs({defines.inventory.chest}) do
+                    local inventory = container.get_inventory(inv_type)
+                    if inventory then
+                        for i = 1, #inventory do
+                            local stack = inventory[i]
+                            if stack.valid_for_read then
+                                local is_vehicle = vehicles_list.is_vehicle(stack.name)
+                                local is_spider_vehicle = vehicles_list.is_spider_vehicle(stack.name)
+                                
+                                if is_vehicle and not processed_slots[i] then
+                                    processed_slots[i] = true
+                                    
+                                    local name = stack.name:gsub("^%l", string.upper)
+                                    
+                                    if stack.entity_label and stack.entity_label ~= "" then
+                                        name = stack.entity_label
+                                    end
+                                    
+                                    local color = stack.entity_color
+                                    local quality = stack.quality
+                                    
+                                    local tooltip = "Space Surface: " .. target_orbit_surface.name .. "\nSlot: " .. i
+                                    local entity_name = stack.name
+                                    
+                                    -- Validate deployment is allowed
+                                    local hub_zone = nil
+                                    local player_zone_valid = nil
+                                    
+                                    if remote.interfaces["space-exploration"] then
+                                        hub_zone = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = container.surface.index})
+                                        player_zone_valid = remote.call("space-exploration", "get_zone_from_surface_index", {surface_index = player_surface.index})
+                                    end
+                                    
+                                    local can_deploy = true
+                                    if hub_zone and is_space_zone_type(hub_zone.type) then
+                                        can_deploy = false
+                                        
+                                        if player_surface == container.surface then
+                                            can_deploy = true
+                                        elseif hub_zone.parent and player_zone_valid then
+                                            if player_zone_valid.name == hub_zone.parent.name then
+                                                can_deploy = true
+                                            end
+                                        elseif not hub_zone.parent and player_zone_valid and (player_zone_valid.type == "planet" or player_zone_valid.type == "moon") then
+                                            local orbit_name = hub_zone.name or container.surface.name
+                                            local expected_planet_name = orbit_name:gsub("%s+Orbit$", ""):gsub("%s+Asteroid%-Belt$", ""):gsub("%s+Asteroid%-Field$", "")
+                                            
+                                            if player_zone_valid.name == expected_planet_name then
+                                                can_deploy = true
+                                            end
+                                        end
+                                    end
+                                    
+                                    if can_deploy then
+                                        table.insert(available_vehicles, {
+                                            name = name,
+                                            tooltip = tooltip,
+                                            color = color,
+                                            index = i,
+                                            hub = container,
+                                            inventory_slot = i,
+                                            inv_type = inv_type,
+                                            platform_name = target_orbit_surface.name,
+                                            quality = quality,
+                                            vehicle_name = stack.name,
+                                            entity_name = entity_name,
+                                            is_spider = is_spider_vehicle
+                                        })
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    return available_vehicles
+end
+
+-- Public function that routes to appropriate implementation
+function map_gui.find_orbital_vehicles(player_surface, player)
+    if is_space_exploration then
+        return find_orbital_vehicles_se(player_surface, player)
+    else
+        return find_orbital_vehicles_sa(player_surface)
+    end
 end
 
 -- ============================================================================
@@ -389,7 +576,7 @@ function map_gui.list_compatible_items_in_inventory(inventory, compatible_items_
     return match_list
 end
 
--- Scan the platform inventory for available items
+-- Scan the platform inventory for available items (consolidated version)
 function map_gui.scan_platform_inventory(vehicle_data)
     local available_items = {}
     local hub = vehicle_data.hub
@@ -456,7 +643,7 @@ end
 -- GUI BUILDERS
 -- ============================================================================
 
--- Show the deployment menu
+-- Show the deployment menu (consolidated with both SA and SE features)
 function map_gui.show_deployment_menu(player, vehicles)
     if player.gui.screen["spidertron_deployment_frame"] then
         player.gui.screen["spidertron_deployment_frame"].destroy()
@@ -464,7 +651,6 @@ function map_gui.show_deployment_menu(player, vehicles)
     
     if player.opened then
         player.opened = nil
-        -- Don't create GUI yet - wait for next tick
         storage.pending_deployment = storage.pending_deployment or {}
         storage.pending_deployment[player.index] = {
             vehicles = vehicles,
@@ -473,7 +659,7 @@ function map_gui.show_deployment_menu(player, vehicles)
         return
     end
 
-    -- Store vehicles for this player so button click handlers can find them
+    -- Store vehicles for this player
     storage.deployment_vehicles = storage.deployment_vehicles or {}
     storage.deployment_vehicles[player.index] = vehicles
 
@@ -522,6 +708,7 @@ function map_gui.show_deployment_menu(player, vehicles)
         style = "frame_action_button"
     }
     
+    -- Get planet display name
     local planet_display_name = nil
     
     if storage.pending_deployment and storage.pending_deployment[player.index] then
@@ -535,10 +722,8 @@ function map_gui.show_deployment_menu(player, vehicles)
         local space_location = nil
         
         if player.surface and player.surface.platform then
-            -- On platform - get the space_location it's orbiting
             space_location = player.surface.platform.space_location
         else
-            -- On planet - get the planet's space_location prototype
             space_location = prototypes.space_location[player.surface.name]
         end
         
@@ -546,7 +731,6 @@ function map_gui.show_deployment_menu(player, vehicles)
             planet_display_name = space_location.localised_name
         end
         
-        -- Final fallback
         if not planet_display_name then
             planet_display_name = capitalize_first(player.surface.name)
         end
@@ -557,12 +741,6 @@ function map_gui.show_deployment_menu(player, vehicles)
         caption = {"string-mod-setting.orbital-deployment"},
         style = "caption_label"
     }
-
-    -- frame.add{
-    --     type = "label",
-    --     caption = {"", "Select vehicle to deploy from ", planet_display_name, " orbit"},
-    --     style = "caption_label"
-    -- }
     
     -- Create tabbed pane
     local tabbed_pane = frame.add{
@@ -570,7 +748,7 @@ function map_gui.show_deployment_menu(player, vehicles)
         name = "deployment_tabbed_pane"
     }
     
-        -- ========================================================================
+    -- ========================================================================
     -- VEHICLES TAB
     -- ========================================================================
     local vehicles_tab = tabbed_pane.add{
@@ -697,7 +875,7 @@ function map_gui.show_deployment_menu(player, vehicles)
     tabbed_pane.add_tab(vehicles_tab, vehicles_content)
     
     -- ========================================================================
-    -- SUPPLIES TAB
+    -- SUPPLIES TAB (for both SA and SE)
     -- ========================================================================
     local supplies_tab = tabbed_pane.add{
         type = "tab",
@@ -712,7 +890,6 @@ function map_gui.show_deployment_menu(player, vehicles)
         direction = "vertical"
     }
     
-    -- Info label
     local info_flow = supplies_content.add{
         type = "flow",
         direction = "vertical"
@@ -730,7 +907,6 @@ function map_gui.show_deployment_menu(player, vehicles)
     info_label.style.maximal_width = 380
     info_label.style.font_color = {r=0.7, g=0.7, b=0.7}
     
-    -- Separator
     local separator = supplies_content.add{
         type = "line",
         direction = "horizontal"
@@ -738,7 +914,6 @@ function map_gui.show_deployment_menu(player, vehicles)
     separator.style.top_margin = 10
     separator.style.bottom_margin = 10
     
-    -- Bot selection scroll pane
     local supplies_scroll_pane = supplies_content.add{
         type = "scroll-pane",
         name = "supplies_scroll_pane",
@@ -755,49 +930,96 @@ function map_gui.show_deployment_menu(player, vehicles)
         style = "table"
     }
     
-    -- Scan platform inventory for bots (similar to scan_platform_inventory but simpler)
+    -- Scan platform inventory for bots
     local available_bots = {
         ["construction-robot"] = {total = 0, by_quality = {}},
         ["logistic-robot"] = {total = 0, by_quality = {}}
     }
     
-    -- Find ANY platform hub to scan for bots
-    for _, surface in pairs(game.surfaces) do
-        if surface.platform and surface.platform.hub and surface.platform.hub.valid then
-            local hub = surface.platform.hub
-            local inventory = hub.get_inventory(defines.inventory.chest)
-            
-            if inventory then
-                for i = 1, #inventory do
-                    local stack = inventory[i]
-                    if stack and stack.valid_for_read then
-                        local bot_name = stack.name
-                        
-                        if bot_name == "construction-robot" or bot_name == "logistic-robot" then
-                            local quality_name = get_quality_name(stack.quality)
-                            local quality_level = 1
-                            local quality_color = {r=1, g=1, b=1}
+    -- Find ANY hub to scan for bots (works for both SA and SE)
+    if is_space_age then
+        for _, surface in pairs(game.surfaces) do
+            if surface.platform and surface.platform.hub and surface.platform.hub.valid then
+                local hub = surface.platform.hub
+                local inventory = hub.get_inventory(defines.inventory.chest)
+                
+                if inventory then
+                    for i = 1, #inventory do
+                        local stack = inventory[i]
+                        if stack and stack.valid_for_read then
+                            local bot_name = stack.name
                             
-                            if stack.quality then
-                                quality_level = stack.quality.level
-                                quality_color = stack.quality.color
+                            if bot_name == "construction-robot" or bot_name == "logistic-robot" then
+                                local quality_name = get_quality_name(stack.quality)
+                                local quality_level = 1
+                                local quality_color = {r=1, g=1, b=1}
+                                
+                                if stack.quality then
+                                    quality_level = stack.quality.level
+                                    quality_color = stack.quality.color
+                                end
+                                
+                                local quality_key = quality_name
+                                
+                                if not available_bots[bot_name].by_quality[quality_key] then
+                                    available_bots[bot_name].by_quality[quality_key] = {
+                                        name = quality_name,
+                                        level = quality_level,
+                                        color = quality_color,
+                                        count = 0
+                                    }
+                                end
+                                
+                                available_bots[bot_name].by_quality[quality_key].count = 
+                                    available_bots[bot_name].by_quality[quality_key].count + stack.count
+                                available_bots[bot_name].total = 
+                                    available_bots[bot_name].total + stack.count
                             end
-                            
-                            local quality_key = quality_name
-                            
-                            if not available_bots[bot_name].by_quality[quality_key] then
-                                available_bots[bot_name].by_quality[quality_key] = {
-                                    name = quality_name,
-                                    level = quality_level,
-                                    color = quality_color,
-                                    count = 0
-                                }
+                        end
+                    end
+                end
+            end
+        end
+    elseif is_space_exploration then
+        -- SE: Scan cargo bays
+        if storage.cargo_bays then
+            for _, bay_data in pairs(storage.cargo_bays) do
+                if bay_data.entity and bay_data.entity.valid then
+                    local inventory = bay_data.entity.get_inventory(defines.inventory.chest)
+                    
+                    if inventory then
+                        for i = 1, #inventory do
+                            local stack = inventory[i]
+                            if stack and stack.valid_for_read then
+                                local bot_name = stack.name
+                                
+                                if bot_name == "construction-robot" or bot_name == "logistic-robot" then
+                                    local quality_name = get_quality_name(stack.quality)
+                                    local quality_level = 1
+                                    local quality_color = {r=1, g=1, b=1}
+                                    
+                                    if stack.quality then
+                                        quality_level = stack.quality.level
+                                        quality_color = stack.quality.color
+                                    end
+                                    
+                                    local quality_key = quality_name
+                                    
+                                    if not available_bots[bot_name].by_quality[quality_key] then
+                                        available_bots[bot_name].by_quality[quality_key] = {
+                                            name = quality_name,
+                                            level = quality_level,
+                                            color = quality_color,
+                                            count = 0
+                                        }
+                                    end
+                                    
+                                    available_bots[bot_name].by_quality[quality_key].count = 
+                                        available_bots[bot_name].by_quality[quality_key].count + stack.count
+                                    available_bots[bot_name].total = 
+                                        available_bots[bot_name].total + stack.count
+                                end
                             end
-                            
-                            available_bots[bot_name].by_quality[quality_key].count = 
-                                available_bots[bot_name].by_quality[quality_key].count + stack.count
-                            available_bots[bot_name].total = 
-                                available_bots[bot_name].total + stack.count
                         end
                     end
                 end
@@ -805,17 +1027,14 @@ function map_gui.show_deployment_menu(player, vehicles)
         end
     end
     
-    -- Add construction robots
     add_item_entry(supplies_table, 
         {name = "construction-robot", display_name = "Construction Robot"}, 
         available_bots["construction-robot"])
     
-    -- Add logistic robots
     add_item_entry(supplies_table, 
         {name = "logistic-robot", display_name = "Logistic Robot"}, 
         available_bots["logistic-robot"])
     
-    -- Deploy button for supplies
     local supplies_button_flow = supplies_content.add{
         type = "flow",
         direction = "horizontal"
@@ -835,7 +1054,6 @@ function map_gui.show_deployment_menu(player, vehicles)
     
     tabbed_pane.add_tab(supplies_tab, supplies_content)
     
-    -- Store available bots for later use
     storage.supplies_available_bots = available_bots
 end
 
@@ -855,7 +1073,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     
     local available_items = map_gui.scan_platform_inventory(vehicle_data)
     
-    -- MULTIPLAYER FIX: Use player-specific storage
+    -- Store deployment data (player-specific for multiplayer)
     if not storage.temp_deployment_data then
         storage.temp_deployment_data = {}
     end
@@ -1020,7 +1238,9 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         end
     end
 
+    -- Equipment handling - show for ANY vehicle with equipment grid
     local has_equipment = false
+    
     if entity_prototype and entity_prototype.grid_prototype then
         has_equipment = true
         local grid_categories = entity_prototype.grid_prototype.equipment_categories
@@ -1086,7 +1306,6 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     drag_handle.ignored_by_interaction = false
     drag_handle.drag_target = frame
     
-    -- CHANGED: Only close button, no back button (X goes back to vehicle list)
     local close_button = title_flow.add{
         type = "sprite-button",
         name = "close_extras_menu_btn",
@@ -1120,8 +1339,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     local utilities_tab = tabbed_pane.add{
         type = "tab",
         name = "utilities_tab",
-        caption = "[img=item/repair-pack] Utilities",
-        --tooltip = {"string-mod-setting.utilities"} not needed
+        caption = "[img=item/repair-pack] Utilities"
     }
     local utilities_content = tabbed_pane.add{
         type = "flow",
@@ -1226,12 +1444,12 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         tabbed_pane.add_tab(fuel_tab, fuel_content)
     end
     
-    if has_equipment and api.is_tfmg_active() then
+    -- Equipment tab (SA + TFMG only)
+    if has_equipment then
         local equipment_tab = tabbed_pane.add{
             type = "tab",
             name = "equipment_tab",
-            caption = "[img=item/personal-roboport-equipment] Equipment",
-            --tooltip = {"string-mod-setting.equipment"} -- not needed
+            caption = "[img=item/personal-roboport-equipment] Equipment"
         }
         local equipment_content = tabbed_pane.add{
             type = "flow",
@@ -1268,15 +1486,12 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             end
         end
         
-        -- MULTIPLAYER FIX: Store in player-specific storage
         if grid and grid.valid then
             storage.temp_deployment_data[player.index].equipment_grid = grid
             storage.temp_deployment_data[player.index].equipment_vehicle_stack = vehicle_stack
         end
 
-        -- local equipment_counts = {}
         local has_ghosts = false
-        -- First, normalize the data to group by equipment_name + quality
         local normalized_equipment = {}
         if grid and grid.valid then
             for _, equipment in pairs(grid.equipment) do
@@ -1288,16 +1503,14 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
                         equipment_name = equipment.ghost_name
                     end
                     
-                    -- Get quality name
                     local quality_name = "Normal"
                     local quality_level = 0
 
                     if equipment.quality then
-                        quality_name = equipment.quality.name  -- Direct access works fine!
+                        quality_name = equipment.quality.name
                         quality_level = equipment.quality.level or 0
                     end
                     
-                    -- Key is equipment_name:quality
                     local key = equipment_name .. ":" .. quality_name
                     
                     if not normalized_equipment[key] then
@@ -1322,14 +1535,12 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             end
         end
 
-        -- Sort by equipment name, then by quality level
         local sorted_equipment = {}
         for _, data in pairs(normalized_equipment) do
             table.insert(sorted_equipment, data)
         end
 
         table.sort(sorted_equipment, function(a, b)
-            -- First sort by equipment name (using localised_name)
             local name_a = type(a.localised_name) == "string" and a.localised_name or tostring(a.localised_name)
             local name_b = type(b.localised_name) == "string" and b.localised_name or tostring(b.localised_name)
             
@@ -1337,7 +1548,6 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
                 return name_a < name_b
             end
             
-            -- Then sort by quality level (Normal=0, Uncommon=1, etc.)
             return a.quality_level < b.quality_level
         end)
 
@@ -1353,7 +1563,6 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
 
         if next(normalized_equipment) then            
             for _, eq in ipairs(sorted_equipment) do
-                -- Build caption: "Name [Quality] x5 (x2 unfulfilled)"
                 local quality_display = eq.quality_name ~= "Normal" and " [" .. eq.quality_name .. "]" or ""
                 local real_display = eq.real_count > 0 and (" x" .. eq.real_count) or ""
                 local ghost_display = eq.ghost_count > 0 and (" (x" .. eq.ghost_count .. " unfulfilled)") or ""
@@ -1372,7 +1581,6 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
                 equipment_label.style.top_padding = 2
                 equipment_label.style.bottom_padding = 2
                 
-                -- Color blue if ANY ghosts exist for this equipment+quality combo
                 if eq.ghost_count > 0 then
                     equipment_label.style.font_color = {r=0.5, g=0.7, b=1}
                 end
@@ -1386,7 +1594,6 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             no_equipment_label.style.font_color = {r=0.7, g=0.7, b=0.7}
         end
 
-        -- Show warning if ghosts exist
         if has_ghosts then
             local warning_flow = equipment_scroll_pane.add{
                 type = "flow",
@@ -1404,7 +1611,6 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             warning_label.style.maximal_width = 480
         end
 
-        -- Store ghost status for deployment validation
         storage.temp_deployment_data[player.index].has_equipment_ghosts = has_ghosts
 
         local button_flow = equipment_scroll_pane.add{
@@ -1425,17 +1631,10 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         }
         open_grid_button.style.minimal_width = 200
         open_grid_button.style.minimal_height = 40
-        --open_grid_button.tooltip = {"string-mod-setting.manage-equipment-grid"} not needed
         
         tabbed_pane.add_tab(equipment_tab, equipment_content)
     end
     
-    -- local vert_spacer = frame.add{
-    --     type = "empty-widget"
-    -- }
-    -- vert_spacer.style.minimal_height = 10
-
-    -- CHANGED: Single Deploy button at bottom
     local button_flow = frame.add{
         type = "flow",
         name = "button_flow",
@@ -1479,16 +1678,8 @@ function map_gui.on_player_changed_surface(event)
 end
 
 function map_gui.on_player_changed_render_mode(event)
-    local player = game.get_player(event.player_index)
-    if not player then return end
-
-    local space_platform_researched = player.force.technologies["space-platform"] and player.force.technologies["space-platform"].researched or false
-    
-    if space_platform_researched then
-        player.set_shortcut_available("orbital-spidertron-deploy", true)
-    else
-        player.set_shortcut_available("orbital-spidertron-deploy", false)
-    end
+    -- Shortcut visibility is controlled by data.lua (technology_to_unlock)
+    -- Once unlocked, it should remain visible - no need to toggle availability
 end
 
 local function collect_selected_extras(player, frame)
@@ -1562,19 +1753,20 @@ function handle_extras_menu_clicks(event)
     local player = game.get_player(event.player_index)
     if not player then return end
     
-    -- CHANGED: X button now goes back to vehicle list
     if element.name == "close_extras_menu_btn" then
         if player.gui.screen["spidertron_extras_frame"] then
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
         
-        -- Reopen vehicle list
-        local vehicles = map_gui.find_orbital_vehicles(player.surface)
-        map_gui.show_deployment_menu(player, vehicles)
+        local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
+        if #vehicles == 0 then
+            player.print("No vehicles are deployable to this surface.")
+        else
+            map_gui.show_deployment_menu(player, vehicles)
+        end
         return
     end
     
-    -- CHANGED: Single deploy button (replaces both old buttons)
     if element.name == "confirm_deploy_btn" then
         local deployment_data = storage.temp_deployment_data and storage.temp_deployment_data[player.index]
         if not deployment_data then
@@ -1582,13 +1774,10 @@ function handle_extras_menu_clicks(event)
         end
         
         if deployment_data.has_equipment_ghosts == true then
-            ----player.print("Has ghosts, checking tab...")
-            
             local frame = player.gui.screen["spidertron_extras_frame"]
             if frame and frame.valid then
                 local tabbed_pane = frame["extras_tabbed_pane"]
                 if tabbed_pane and tabbed_pane.valid then
-                    -- Count tabs to find equipment tab's index among TABS ONLY
                     local equipment_tab_index = nil
                     local tab_count = 0
                     
@@ -1597,11 +1786,9 @@ function handle_extras_menu_clicks(event)
                         
                         if child.type == "tab" then
                             tab_count = tab_count + 1
-                            --player.print("Tab #" .. tab_count .. ": " .. tostring(child.name))
                             
                             if child.name == "equipment_tab" then
                                 equipment_tab_index = tab_count
-                                --player.print("Found equipment_tab at tab index " .. tab_count)
                                 break
                             end
                         end
@@ -1609,13 +1796,10 @@ function handle_extras_menu_clicks(event)
                     
                     if equipment_tab_index then
                         local current_index = tabbed_pane.selected_tab_index or 1
-                        --player.print("Current tab: " .. current_index .. ", Equipment tab: " .. equipment_tab_index)
                         
                         if current_index == equipment_tab_index then
-                            --player.print("Already on equipment tab, allowing deployment")
                             -- Fall through
                         else
-                            --player.print("Switching to equipment tab...")
                             tabbed_pane.selected_tab_index = equipment_tab_index
                             player.print("[color=yellow]Unfulfilled equipment requests. Review equipment tab before deploying.[/color]")
                             return
@@ -1625,10 +1809,9 @@ function handle_extras_menu_clicks(event)
             end
         end
 
-        -- Continue with deployment...
         local vehicle_data = deployment_data.vehicle
         
-        -- REVALIDATION: Check if vehicle still exists
+        -- Revalidate vehicle existence
         local hub = vehicle_data.hub
         if not hub or not hub.valid then
             player.print({"string-mod-setting.error-no-platform-hub"})
@@ -1636,7 +1819,7 @@ function handle_extras_menu_clicks(event)
                 player.gui.screen["spidertron_extras_frame"].destroy()
             end
             storage.temp_deployment_data[player.index] = nil
-            local vehicles = map_gui.find_orbital_vehicles(player.surface)
+            local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
             map_gui.show_deployment_menu(player, vehicles)
             return
         end
@@ -1649,7 +1832,7 @@ function handle_extras_menu_clicks(event)
                 player.gui.screen["spidertron_extras_frame"].destroy()
             end
             storage.temp_deployment_data[player.index] = nil
-            local vehicles = map_gui.find_orbital_vehicles(player.surface)
+            local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
             map_gui.show_deployment_menu(player, vehicles)
             return
         end
@@ -1663,28 +1846,25 @@ function handle_extras_menu_clicks(event)
                 player.gui.screen["spidertron_extras_frame"].destroy()
             end
             storage.temp_deployment_data[player.index] = nil
-            local vehicles = map_gui.find_orbital_vehicles(player.surface)
+            local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
             map_gui.show_deployment_menu(player, vehicles)
             return
         end
         
-        -- Collect selected extras
         local frame = player.gui.screen["spidertron_extras_frame"]
         local selected_extras = collect_selected_extras(player, frame)
         
-        -- REVALIDATION: Check if selected items are still available
+        -- Revalidate selected items
         if #selected_extras > 0 then
             local items_valid = true
             local missing_items = {}
             
-            -- Count what we need
             local needed_items = {}
             for _, extra in ipairs(selected_extras) do
                 local key = extra.name .. ":" .. (extra.quality or "Normal")
                 needed_items[key] = (needed_items[key] or 0) + extra.count
             end
             
-            -- Count what we have
             local found_items = {}
             for i = 1, #hub_inventory do
                 local inv_stack = hub_inventory[i]
@@ -1703,7 +1883,6 @@ function handle_extras_menu_clicks(event)
                 end
             end
             
-            -- Check availability
             for key, needed in pairs(needed_items) do
                 local found = found_items[key] or 0
                 if found < needed then
@@ -1719,17 +1898,10 @@ function handle_extras_menu_clicks(event)
             end
             
             if not items_valid then
-                -- Show error and stay in extras menu
-                local error_msg = {"string-mod-setting.error-items-not-available"}
-                for _, item in ipairs(missing_items) do
-                    error_msg = error_msg .. "\n" .. item.name .. " (" .. item.quality .. "): need " .. item.needed .. ", have " .. item.available
-                end
-                --player.print(error_msg)
                 return
             end
         end
         
-        -- Everything validated, proceed with deployment
         if player.gui.screen["spidertron_extras_frame"] then
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
@@ -1751,10 +1923,8 @@ script.on_event(defines.events.on_gui_confirmed, function(event)
     local player = game.get_player(event.player_index)
     if not player then return end
     
-    -- Check if extras menu is open
     local extras_frame = player.gui.screen["spidertron_extras_frame"]
     if extras_frame and extras_frame.valid and event.element == extras_frame then
-        -- Find and click the confirm button
         local confirm_btn = extras_frame.button_flow and extras_frame.button_flow.confirm_deploy_btn
         if confirm_btn and confirm_btn.valid then
             handle_extras_menu_clicks({
@@ -1779,12 +1949,7 @@ function map_gui.on_gui_click(event)
         return
     end
 
-    -- Handle supplies deployment button
     if element.name == "deploy_supplies_btn" then
-        local player = game.get_player(event.player_index)
-        if not player then return end
-        
-        -- Find the frame and collect selected bot counts
         local frame = player.gui.screen["spidertron_deployment_frame"]
         if not frame then return end
         
@@ -1800,7 +1965,6 @@ function map_gui.on_gui_click(event)
         local supplies_table = supplies_scroll["supplies_table"]
         if not supplies_table then return end
         
-        -- Collect selected bot counts
         local selected_bots = {}
         
         for _, child in pairs(supplies_table.children) do
@@ -1824,11 +1988,9 @@ function map_gui.on_gui_click(event)
         end
         
         if #selected_bots == 0 then
-            --player.print("No robots selected for deployment")
             return
         end
         
-        -- Close the deployment menu
         frame.destroy()
         
         deployment.deploy_supplies(player, player.surface, selected_bots)
@@ -1910,21 +2072,12 @@ function map_gui.on_gui_click(event)
         return
     end
 
-    if element.name == "close_deployment_menu_btn" then
-        if player.gui.screen["spidertron_deployment_frame"] then
-            player.gui.screen["spidertron_deployment_frame"].destroy()
-        end
-        return
-    end
-
     if element.name == "close_extras_menu_btn" then
-        -- Close the extras menu
         if player.gui.screen["spidertron_extras_frame"] then
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
         
-        -- CHANGED: Re-scan for vehicles instead of using storage.spidertrons
-        local vehicles = map_gui.find_orbital_vehicles(player.surface)
+        local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
         if vehicles and #vehicles > 0 then
             map_gui.show_deployment_menu(player, vehicles)
         else
@@ -1934,15 +2087,12 @@ function map_gui.on_gui_click(event)
     end
 
     if element.name == "back_to_deployment_menu_btn" then
-        -- Close the extras menu
         if player.gui.screen["spidertron_extras_frame"] then
             player.gui.screen["spidertron_extras_frame"].destroy()
         end
         
-        -- CHANGED: Re-scan for vehicles instead of using stale list
-        local vehicles = map_gui.find_orbital_vehicles(player.surface)
+        local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
         if vehicles and #vehicles > 0 then
-            -- Reopen the deployment menu
             map_gui.show_deployment_menu(player, vehicles)
         else
             player.print("No vehicles available")
@@ -1955,7 +2105,6 @@ function map_gui.on_gui_click(event)
         return
     end
 
-    -- Handle equipment grid edit button
     local edit_grid_index_str = string.match(element.name, "^edit_equipment_grid_(%d+)$")
     if edit_grid_index_str then
         local index = tonumber(edit_grid_index_str)
@@ -1975,12 +2124,10 @@ function map_gui.on_gui_click(event)
         local vehicle_stack = hub_inventory[vehicle.inventory_slot]
         if not vehicle_stack or not vehicle_stack.valid_for_read then return end
 
-        -- Close deployment frame if open
         if player.gui.screen["spidertron_deployment_frame"] then
             player.gui.screen["spidertron_deployment_frame"].destroy()
         end
 
-        -- Open the equipment grid
         local grid = vehicle_stack.grid
         if not grid then
             local success, created_grid = pcall(function()
@@ -1998,10 +2145,8 @@ function map_gui.on_gui_click(event)
             return
         end
 
-        -- Open the grid in player's interface
         player.opened = grid
         
-        -- If that didn't work, try opening the stack directly
         local opened = player.opened
         if not opened or opened ~= grid then
             player.opened = vehicle_stack
@@ -2010,7 +2155,6 @@ function map_gui.on_gui_click(event)
         return
     end
     
-    -- Handle deploy to target button
     local target_index_str = string.match(element.name, "^deploy_target_(%d+)$")
     if target_index_str then
         local index = tonumber(target_index_str)
@@ -2029,7 +2173,6 @@ function map_gui.on_gui_click(event)
         return
     end
 
-    -- Handle deploy to player button
     local player_index_str = string.match(element.name, "^deploy_player_(%d+)$")
     if player_index_str then
         local index = tonumber(player_index_str)
@@ -2049,30 +2192,6 @@ function map_gui.on_gui_click(event)
     end
 end
 
-function map_gui.on_lua_shortcut(event)
-    if event.prototype_name == "orbital-spidertron-deploy" then
-        local player = game.get_player(event.player_index)
-        if not player then return end
-        
-        local vehicles = map_gui.find_orbital_vehicles(player.surface)
-        if #vehicles == 0 then
-            return
-        end
-        
-        map_gui.show_deployment_menu(player, vehicles)
-    end
-end
-
-script.on_event(defines.events.on_gui_closed, function(event)
-    local player = game.get_player(event.player_index)
-    if not player then return end
-    
-    -- Clean up equipment grid tracking when grid is closed
-    if storage.current_equipment_grid_vehicle then
-        storage.current_equipment_grid_vehicle = nil
-    end
-end)
-
 function map_gui.destroy_deploy_button(player)
     if player.gui.screen["spidertron_deployment_frame"] then
         player.gui.screen["spidertron_deployment_frame"].destroy()
@@ -2080,58 +2199,18 @@ function map_gui.destroy_deploy_button(player)
 end
 
 function map_gui.initialize_player_shortcuts(player)
-    
-    local is_tfmg_active = api and api.is_tfmg_active() or false
-    
-    if not vehicles_list.spider_vehicles then
-        vehicles_list.initialize()
-    end
-    local has_spider_vehicles = #vehicles_list.spider_vehicles > 0
-    
-    local should_enable = false
-    
-    if is_tfmg_active then
-        should_enable = true
-    elseif not has_spider_vehicles then
-        should_enable = true
-    else
-        local space_platform_tech = player.force.technologies["space-platform"]
-        local space_platform_researched = (space_platform_tech and space_platform_tech.researched) or false
-        
-        should_enable = space_platform_researched
-    end
-    
-    if should_enable then
-        player.set_shortcut_available("orbital-spidertron-deploy", true)
-    else
-        player.set_shortcut_available("orbital-spidertron-deploy", false)
-    end
+    -- Shortcut availability is controlled by data.lua via technology_to_unlock
+    -- SA: Unlocked by "space-platform" tech
+    -- SE: Unlocked by "se-space-capsule-navigation" tech  
+    -- TFMG: Always unlocked (no tech requirement)
+    -- Once unlocked, always keep it available
+    player.set_shortcut_available("orbital-spidertron-deploy", true)
 end
 
 function map_gui.initialize_all_players()
     for _, player in pairs(game.players) do
         map_gui.initialize_player_shortcuts(player)
     end
-end
-
-function map_gui.setup_cleanup_task()
-    script.on_nth_tick(300, function()
-        if storage.pending_pod_deployments then
-            local current_tick = game.tick
-            local stale_ids = {}
-            
-            for id, data in pairs(storage.pending_pod_deployments) do
-                local deployment_tick = tonumber(id:match("_%d+$"):sub(2))
-                if current_tick - deployment_tick > 3600 then
-                    table.insert(stale_ids, id)
-                end
-            end
-            
-            for _, id in ipairs(stale_ids) do
-                storage.pending_pod_deployments[id] = nil
-            end
-        end
-    end)
 end
 
 return map_gui
