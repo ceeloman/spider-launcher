@@ -6,13 +6,13 @@ local is_space_age = script.active_mods["space-age"] ~= nil
 local is_space_exploration = script.active_mods["space-exploration"] ~= nil
 
 -- Load modules
-local map_gui = require("scripts-sa.map-gui")
-local deployment = require("scripts-sa.deployment")
-local vehicles_list = require("scripts-sa.vehicles-list")
-local platform_gui = require("scripts-sa.platform-gui")
-local equipment_grid_fill = require("scripts-sa.equipment-grid-fill")
-local container_deployment = require("scripts-sa.container-deployment")
---local api = require("scripts-sa.api")
+local map_gui = require("scripts.map-gui")
+local deployment = require("scripts.deployment")
+local vehicles_list = require("scripts.vehicles-list")
+local platform_gui = require("scripts.platform-gui")
+local equipment_grid_fill = require("scripts.equipment-grid-fill")
+local container_deployment = require("scripts.container-deployment")
+--local api = require("scripts.api")
 
 -- Debug logging function
 local function debug_log(message)

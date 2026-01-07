@@ -1,8 +1,8 @@
--- scripts-sa/map-gui.lua
+-- scripts/map-gui.lua
 -- Consolidated version with Space Age and Space Exploration compatibility
 
-local vehicles_list = require("scripts-sa.vehicles-list")
-local deployment = require("scripts-sa.deployment")
+local vehicles_list = require("scripts.vehicles-list")
+local deployment = require("scripts.deployment")
 
 -- Detect which mod is active
 local is_space_age = script.active_mods["space-age"] ~= nil
@@ -1370,7 +1370,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             type = "tab",
             name = "ammo_tab",
             caption = "[img=item/firearm-magazine] Ammo",
-            tooltip = {"string-mod-setting.ammo"}
+            --tooltip = {"string-mod-setting.ammo"}
         }
         local ammo_content = tabbed_pane.add{
             type = "flow",
@@ -1409,7 +1409,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
             type = "tab",
             name = "fuel_tab",
             caption = "[img=item/rocket-fuel] Fuel",
-            tooltip = {"string-mod-setting.fuel"}
+            --tooltip = {"string-mod-setting.fuel"}
         }
         local fuel_content = tabbed_pane.add{
             type = "flow",

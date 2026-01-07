@@ -7,6 +7,8 @@ Date: 2026-01-06
     - Consolidated Space Age and Space Exploration file branches into one as much of the code was repeated
     - SA and SE specific logic is divided where needed
     - SE compatibility has major issues so use at your own risk
+  Known Bug
+    - TFMG Spidertron doesnt allow equipment placement - needs more testing
 ---------------------------------------------------------------------------------------------------
 Version: 2.9.82
 Date: 2025-12-27

@@ -1,6 +1,8 @@
 -- scripts/deployment.lua
 -- Consolidated version with Space Age and Space Exploration compatibility
 
+-- Bug 1: ammo isnt auto added to the vehicle slots 
+
 local deployment = {}
 
 ----------------------------------
@@ -160,6 +162,7 @@ local function find_compatible_slots_by_category(vehicle, ammo_inventory)
     local slots_by_category = {}
     local ammo_slot_count = #ammo_inventory
     
+    -- Define test ammo for different categories
     local test_ammo = {
         ["bullet"] = "firearm-magazine",
         ["cannon-shell"] = "cannon-shell",
@@ -173,6 +176,8 @@ local function find_compatible_slots_by_category(vehicle, ammo_inventory)
         for slot_index = 1, ammo_slot_count do
             local slot = ammo_inventory[slot_index]
             if slot then
+                -- Debug print to check each slot
+                game.print("Checking slot " .. slot_index .. " for category: " .. category)
                 slot.clear()
                 local success = slot.set_stack({
                     name = test_item,
@@ -180,6 +185,11 @@ local function find_compatible_slots_by_category(vehicle, ammo_inventory)
                 })
                 if success then
                     table.insert(slots_by_category[category], slot_index)
+                    -- Debug print to indicate successful insertion
+                    game.print("Slot " .. slot_index .. " is compatible for category: " .. category)
+                else
+                    -- Debug print to indicate failed insertion
+                    game.print("Slot " .. slot_index .. " is not compatible for category: " .. category)
                 end
                 slot.clear()
             end

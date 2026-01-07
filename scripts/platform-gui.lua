@@ -1,5 +1,5 @@
 -- scripts-sa/platform-gui.lua
-local map_gui = require("scripts-sa.map-gui")
+local map_gui = require("scripts.map-gui")
 
 local platform_gui = {}
 

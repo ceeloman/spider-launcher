@@ -1,8 +1,12 @@
 -- scripts-sa/equipment-grid-fill.lua
 -- Feature to auto-fill equipment grid ghosts from inventory
+-- Future Feature - allow vehicles to fill their own equipment when they have items in their own inventory?
 
-local vehicles_list = require("scripts-sa.vehicles-list")
-local map_gui = require("scripts-sa.map-gui")
+-- Bug 1 if in cheat mode many normal, you can fill equipment remotely because you have opened the equipment grid
+-- Possible fix - force open render mode if opening equipment grid in not render mode
+
+local vehicles_list = require("scripts.vehicles-list")
+local map_gui = require("scripts.map-gui")
 
 local equipment_grid_fill = {}
 

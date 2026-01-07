@@ -1,7 +1,10 @@
 -- scripts-sa/container-deployment.lua
 -- Remote deployment of robots and spider vehicles from containers
 
-local vehicles_list = require("scripts-sa.vehicles-list")
+-- Should robots join the player network if vehicle and roboport network is not available?
+-- The player can always pick them up if needed. I think yes anyway
+
+local vehicles_list = require("scripts.vehicles-list")
 
 local container_deployment = {}
 
