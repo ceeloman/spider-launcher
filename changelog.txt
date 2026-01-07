@@ -3,6 +3,10 @@ Version: 2.9.83
 Date: 2026-01-06
   Locale:
     - Hardcoded values have been added to the locale file
+  Refactor:
+    - Consolidated Space Age and Space Exploration file branches into one as much of the code was repeated
+    - SA and SE specific logic is divided where needed
+    - SE compatibility has major issues so use at your own risk
 ---------------------------------------------------------------------------------------------------
 Version: 2.9.82
 Date: 2025-12-27
