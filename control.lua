@@ -300,7 +300,7 @@ script.on_event(defines.events.on_gui_click, function(event)
         
         local vehicles = map_gui.find_orbital_vehicles(player.surface)
         if #vehicles == 0 then
-            player.print("string-mod-setting.no-vehicles-deployable-here")
+            player.print({"string-mod-setting.no-vehicles-deployable-here"})
         else
             map_gui.show_deployment_menu(player, vehicles)
         end
@@ -618,7 +618,7 @@ script.on_event(defines.events.on_gui_opened, function(event)
                                                 local orbital_deploy_button = button_flow.add{
                                                     type = "button",
                                                     name = "equipment_grid_orbital_deploy_btn",
-                                                    caption = "string-mod-setting.orbital-deployment",
+                                                    caption = {"string-mod-setting.orbital-deployment"},
                                                     style = "confirm_button"
                                                 }
                                                 orbital_deploy_button.tooltip = "Continue orbital deployment and reopen deployment menu"
@@ -751,7 +751,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
                     return
                 end
             else
-                player.print("string-mod-setting.platform-in-transit")
+                player.print({"string-mod-setting.platform-in-transit"})
                 return
             end
         end
@@ -760,7 +760,7 @@ script.on_event(defines.events.on_lua_shortcut, function(event)
         local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
         
         if #vehicles == 0 then
-            player.print("string-mod-setting.no-vehicles-deployable-here")
+            player.print({"string-mod-setting.no-vehicles-deployable-here"})
             if is_space_exploration then
                 debug_log("No vehicles found - deployment aborted")
             end
