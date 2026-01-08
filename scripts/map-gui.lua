@@ -800,7 +800,7 @@ function map_gui.show_deployment_menu(player, vehicles)
             sprite_name = "item/" .. vehicle.vehicle_name
         end
         
-        create_item_icon_with_quality(row_container, vehicle.vehicle_name, vehicle.quality, "Vehicle from " .. vehicle.platform_name)
+        create_item_icon_with_quality(row_container, vehicle.vehicle_name, vehicle.quality, {"string-mod-setting.vehicle-from-platform", vehicle.platform_name})
         
         local name_label = row_container.add{
             type = "label",

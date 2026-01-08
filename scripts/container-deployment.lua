@@ -1,9 +1,6 @@
 -- scripts-sa/container-deployment.lua
 -- Remote deployment of robots and spider vehicles from containers
 
--- Should robots join the player network if vehicle and roboport network is not available?
--- The player can always pick them up if needed. I think yes anyway
-
 local vehicles_list = require("scripts.vehicles-list")
 
 local container_deployment = {}
@@ -12,7 +9,7 @@ local container_deployment = {}
 container_deployment.FRAME_NAME = "container_remote_deployment_frame"
 container_deployment.BUTTON_PREFIX = "container_deploy_btn_"
 
--- Check if container has deployable items (spider vehicles or bots)
+-- Check if container has deployable items (spider vehicles, bots, or repair tools)
 function container_deployment.has_deployable_items(container)
     if not container or not container.valid then
         return false
@@ -32,7 +29,12 @@ function container_deployment.has_deployable_items(container)
             end
             
             -- Check if it's a deployable bot
-            if stack.name == "construction-robot" or stack.name == "logistic-robot" then
+            if vehicles_list.is_construction_robot(stack.name) or vehicles_list.is_logistic_robot(stack.name) then
+                return true
+            end
+            
+            -- Check if it's a repair tool
+            if vehicles_list.is_repair_tool(stack.name) then
                 return true
             end
         end
@@ -42,12 +44,13 @@ function container_deployment.has_deployable_items(container)
 end
 
 -- Scan container inventory for deployable items
--- Returns: {vehicles = {...}, construction_bots = {...}, logistic_bots = {...}}
+-- Returns: {vehicles = {...}, construction_bots = {...}, logistic_bots = {...}, repair_tools = {...}}
 function container_deployment.scan_deployable_items(container)
     local result = {
         vehicles = {},
         construction_bots = {},
-        logistic_bots = {}
+        logistic_bots = {},
+        repair_tools = {}
     }
     
     if not container or not container.valid then
@@ -84,12 +87,12 @@ function container_deployment.scan_deployable_items(container)
                         entity_color = stack.entity_color or nil
                     })
                 -- Construction robots
-                elseif item_name == "construction-robot" then
+                elseif vehicles_list.is_construction_robot(item_name) then
                     -- Group by quality
                     local quality_name = stack.quality and stack.quality.name or "Normal"
                     local existing = nil
                     for _, bot in ipairs(result.construction_bots) do
-                        if bot.quality_name == quality_name then
+                        if bot.quality_name == quality_name and bot.name == item_name then
                             existing = bot
                             break
                         end
@@ -107,12 +110,12 @@ function container_deployment.scan_deployable_items(container)
                         })
                     end
                 -- Logistic robots
-                elseif item_name == "logistic-robot" then
+                elseif vehicles_list.is_logistic_robot(item_name) then
                     -- Group by quality
                     local quality_name = stack.quality and stack.quality.name or "Normal"
                     local existing = nil
                     for _, bot in ipairs(result.logistic_bots) do
-                        if bot.quality_name == quality_name then
+                        if bot.quality_name == quality_name and bot.name == item_name then
                             existing = bot
                             break
                         end
@@ -122,6 +125,29 @@ function container_deployment.scan_deployable_items(container)
                         existing.count = existing.count + stack.count
                     else
                         table.insert(result.logistic_bots, {
+                            name = item_name,
+                            quality = stack.quality,
+                            quality_name = quality_name,
+                            count = stack.count,
+                            stack_size = stack_size
+                        })
+                    end
+                -- Repair tools
+                elseif vehicles_list.is_repair_tool(item_name) then
+                    -- Group by quality
+                    local quality_name = stack.quality and stack.quality.name or "Normal"
+                    local existing = nil
+                    for _, tool in ipairs(result.repair_tools) do
+                        if tool.quality_name == quality_name and tool.name == item_name then
+                            existing = tool
+                            break
+                        end
+                    end
+                    
+                    if existing then
+                        existing.count = existing.count + stack.count
+                    else
+                        table.insert(result.repair_tools, {
                             name = item_name,
                             quality = stack.quality,
                             quality_name = quality_name,
@@ -143,6 +169,7 @@ function container_deployment.scan_deployable_items(container)
     
     table.sort(result.construction_bots, sort_by_quality)
     table.sort(result.logistic_bots, sort_by_quality)
+    table.sort(result.repair_tools, sort_by_quality)
     
     return result
 end
@@ -224,7 +251,7 @@ function container_deployment.get_or_create_gui(player, container)
     scroll_pane.style.maximal_height = 400
     scroll_pane.style.minimal_width = 300
     
-    -- Table for sprite buttons (5 per row, like equipment toolbar)
+    -- Table for sprite buttons (7 per row, like equipment toolbar)
     local button_table = scroll_pane.add{
         type = "table",
         name = "deployment_buttons_table",
@@ -234,19 +261,12 @@ function container_deployment.get_or_create_gui(player, container)
     
     local button_count = 0
     
-    -- Add vehicle buttons (sprite buttons with icons)
-    for _, vehicle in ipairs(items.vehicles) do
-        local button_name = container_deployment.BUTTON_PREFIX .. "vehicle_" .. vehicle.index
-        local icon_sprite = "item/" .. vehicle.name
-        
-        local tooltip_text = vehicle.entity_label or vehicle.name
-        if vehicle.count > 1 then
-            tooltip_text = {"", tooltip_text, " - ", vehicle.count, "x"}
-        end
-        
+    -- Helper function to create sprite button with quality overlay
+    local function create_item_button(button_name, item_name, tooltip_text, quality, tags)
+        local icon_sprite = "item/" .. item_name
         local quality_name_lower = "normal"
-        if vehicle.quality then
-            quality_name_lower = string.lower(vehicle.quality.name)
+        if quality then
+            quality_name_lower = string.lower(quality.name)
         end
         
         -- Icon container with quality overlay
@@ -263,7 +283,44 @@ function container_deployment.get_or_create_gui(player, container)
             name = button_name,
             sprite = icon_sprite,
             tooltip = tooltip_text,
-            tags = {
+            tags = tags
+        }
+        sprite_button.style.size = 40
+        sprite_button.style.padding = 0
+        
+        -- Quality overlay
+        if quality_name_lower ~= "normal" then
+            local overlay_name = "sl-" .. quality_name_lower
+            local quality_overlay = icon_container.add{
+                type = "sprite",
+                sprite = overlay_name,
+                tooltip = quality.localised_name or quality.name
+            }
+            quality_overlay.style.size = 14
+            quality_overlay.style.top_padding = 23
+            quality_overlay.style.left_padding = -40
+        end
+        
+        return icon_container
+    end
+    
+    -- Add vehicle buttons
+    for _, vehicle in ipairs(items.vehicles) do
+        local button_name = container_deployment.BUTTON_PREFIX .. "vehicle_" .. vehicle.index
+        local item_prototype = prototypes.item[vehicle.name]
+        local display_name = item_prototype and item_prototype.localised_name or vehicle.name
+        
+        local tooltip_text = vehicle.entity_label or display_name
+        if vehicle.count > 1 then
+            tooltip_text = {"", tooltip_text, " - ", vehicle.count, "x"}
+        end
+        
+        create_item_button(
+            button_name,
+            vehicle.name,
+            tooltip_text,
+            vehicle.quality,
+            {
                 deploy_type = "vehicle",
                 item_name = vehicle.name,
                 inventory_index = vehicle.index,
@@ -272,32 +329,18 @@ function container_deployment.get_or_create_gui(player, container)
                 count = vehicle.count,
                 quality_name = vehicle.quality and vehicle.quality.name or "Normal"
             }
-        }
-        sprite_button.style.size = 40
-        sprite_button.style.padding = 0
-        
-        -- Quality overlay
-        if quality_name_lower ~= "normal" then
-            local overlay_name = "sl-" .. quality_name_lower
-            local quality_overlay = icon_container.add{
-                type = "sprite",
-                sprite = overlay_name,
-                tooltip = vehicle.quality.name .. " quality"
-            }
-            quality_overlay.style.size = 14
-            quality_overlay.style.top_padding = 23
-            quality_overlay.style.left_padding = -40
-        end
+        )
         
         button_count = button_count + 1
     end
     
     -- Add construction bot buttons
     for _, bot in ipairs(items.construction_bots) do
-        local button_name = container_deployment.BUTTON_PREFIX .. "construction_" .. bot.quality_name
-        local icon_sprite = "item/construction-robot"
+        local button_name = container_deployment.BUTTON_PREFIX .. "construction_" .. bot.name .. "_" .. bot.quality_name
+        local item_prototype = prototypes.item[bot.name]
+        local display_name = item_prototype and item_prototype.localised_name or bot.name
         
-        local tooltip_text = "Construction Robot"
+        local tooltip_text = display_name
         if bot.quality_name ~= "Normal" then
             tooltip_text = {"", tooltip_text, " [", bot.quality_name, "]"}
         end
@@ -305,55 +348,31 @@ function container_deployment.get_or_create_gui(player, container)
             tooltip_text = {"", tooltip_text, " - ", bot.count, "x"}
         end
         
-        local quality_name_lower = string.lower(bot.quality_name)
-        
-        -- Icon container with quality overlay
-        local icon_container = button_table.add{
-            type = "flow"
-        }
-        icon_container.style.width = 40
-        icon_container.style.height = 40
-        icon_container.style.padding = 0
-        icon_container.style.margin = 0
-        
-        local sprite_button = icon_container.add{
-            type = "sprite-button",
-            name = button_name,
-            sprite = icon_sprite,
-            tooltip = tooltip_text,
-            tags = {
+        create_item_button(
+            button_name,
+            bot.name,
+            tooltip_text,
+            bot.quality,
+            {
                 deploy_type = "bot",
-                item_name = "construction-robot",
+                bot_entity_type = "construction-robot",
+                item_name = bot.name,
                 quality_name = bot.quality_name,
                 count = bot.count,
                 stack_size = bot.stack_size
             }
-        }
-        sprite_button.style.size = 40
-        sprite_button.style.padding = 0
-        
-        -- Quality overlay
-        if quality_name_lower ~= "normal" then
-            local overlay_name = "sl-" .. quality_name_lower
-            local quality_overlay = icon_container.add{
-                type = "sprite",
-                sprite = overlay_name,
-                tooltip = bot.quality_name .. " quality"
-            }
-            quality_overlay.style.size = 14
-            quality_overlay.style.top_padding = 23
-            quality_overlay.style.left_padding = -40
-        end
+        )
         
         button_count = button_count + 1
     end
     
     -- Add logistic bot buttons
     for _, bot in ipairs(items.logistic_bots) do
-        local button_name = container_deployment.BUTTON_PREFIX .. "logistic_" .. bot.quality_name
-        local icon_sprite = "item/logistic-robot"
+        local button_name = container_deployment.BUTTON_PREFIX .. "logistic_" .. bot.name .. "_" .. bot.quality_name
+        local item_prototype = prototypes.item[bot.name]
+        local display_name = item_prototype and item_prototype.localised_name or bot.name
         
-        local tooltip_text = "Logistic Robot"
+        local tooltip_text = display_name
         if bot.quality_name ~= "Normal" then
             tooltip_text = {"", tooltip_text, " [", bot.quality_name, "]"}
         end
@@ -361,45 +380,51 @@ function container_deployment.get_or_create_gui(player, container)
             tooltip_text = {"", tooltip_text, " - ", bot.count, "x"}
         end
         
-        local quality_name_lower = string.lower(bot.quality_name)
-        
-        -- Icon container with quality overlay
-        local icon_container = button_table.add{
-            type = "flow"
-        }
-        icon_container.style.width = 40
-        icon_container.style.height = 40
-        icon_container.style.padding = 0
-        icon_container.style.margin = 0
-        
-        local sprite_button = icon_container.add{
-            type = "sprite-button",
-            name = button_name,
-            sprite = icon_sprite,
-            tooltip = tooltip_text,
-            tags = {
+        create_item_button(
+            button_name,
+            bot.name,
+            tooltip_text,
+            bot.quality,
+            {
                 deploy_type = "bot",
-                item_name = "logistic-robot",
+                bot_entity_type = "logistic-robot",
+                item_name = bot.name,
                 quality_name = bot.quality_name,
                 count = bot.count,
                 stack_size = bot.stack_size
             }
-        }
-        sprite_button.style.size = 40
-        sprite_button.style.padding = 0
+        )
         
-        -- Quality overlay
-        if quality_name_lower ~= "normal" then
-            local overlay_name = "sl-" .. quality_name_lower
-            local quality_overlay = icon_container.add{
-                type = "sprite",
-                sprite = overlay_name,
-                tooltip = bot.quality_name .. " quality"
-            }
-            quality_overlay.style.size = 14
-            quality_overlay.style.top_padding = 23
-            quality_overlay.style.left_padding = -40
+        button_count = button_count + 1
+    end
+    
+    -- Add repair tool buttons
+    for _, tool in ipairs(items.repair_tools) do
+        local button_name = container_deployment.BUTTON_PREFIX .. "repair_" .. tool.name .. "_" .. tool.quality_name
+        local item_prototype = prototypes.item[tool.name]
+        local display_name = item_prototype and item_prototype.localised_name or tool.name
+        
+        local tooltip_text = display_name
+        if tool.quality_name ~= "Normal" then
+            tooltip_text = {"", tooltip_text, " [", tool.quality_name, "]"}
         end
+        if tool.count > 1 then
+            tooltip_text = {"", tooltip_text, " - ", tool.count, "x"}
+        end
+        
+        create_item_button(
+            button_name,
+            tool.name,
+            tooltip_text,
+            tool.quality,
+            {
+                deploy_type = "repair_tool",
+                item_name = tool.name,
+                quality_name = tool.quality_name,
+                count = tool.count,
+                stack_size = tool.stack_size
+            }
+        )
         
         button_count = button_count + 1
     end
@@ -411,14 +436,6 @@ function container_deployment.get_or_create_gui(player, container)
             button_table.add{type = "empty-widget"}
         end
     end
-    
-    -- Separator
-    -- local separator = content_frame.add{
-    --     type = "line",
-    --     direction = "horizontal"
-    -- }
-    -- separator.style.top_margin = 8
-    -- separator.style.bottom_margin = 8
 
     local spacer = content_frame.add{
         type = "empty-widget"
@@ -555,7 +572,7 @@ function container_deployment.on_button_click(player, button_name, tags)
     
     local container = storage.container_deployment_containers and storage.container_deployment_containers[player.index]
     if not container or not container.valid then
-        player.print("Container is no longer available")
+        player.print({"string-mod-setting.container-unavailable"})
         return
     end
     
@@ -575,6 +592,8 @@ function container_deployment.on_button_click(player, button_name, tags)
         container_deployment.deploy_vehicle(player, container, tags, 1)
     elseif deploy_type == "bot" then
         container_deployment.deploy_bot(player, container, tags, count)
+    elseif deploy_type == "repair_tool" then
+        container_deployment.deploy_repair_tool(player, container, tags, count)
     end
 end
 
@@ -637,9 +656,11 @@ function container_deployment.show_slider(player, tags)
         local item_prototype = prototypes.item[tags.item_name]
         local display_name = item_prototype and item_prototype.localised_name or tags.item_name
         if tags.quality_name and tags.quality_name ~= "Normal" then
-            display_name = {"", display_name, " [", tags.quality_name, "]"}
+            tooltip_text = {"", display_name, " [", tags.quality_name, "]"}
+        else
+            tooltip_text = display_name
         end
-        selected_label.caption = display_name
+        selected_label.caption = tooltip_text
     end
     
     -- Recreate slider and textfield with correct max
@@ -698,10 +719,11 @@ function container_deployment.show_slider(player, tags)
     settings_frame.visible = true
 end
 
--- Find nearest roboport network (checks vehicle networks first, then stationary roboports)
 -- Find network for bot deployment
 -- Uses construction area coverage to determine which network the bot should join
-local function find_network_for_bot(surface, position, bot_type, force)
+-- Priority for construction bots: vehicle → character → roboport
+-- Priority for logistic bots: roboport only
+local function find_network_for_bot(surface, position, bot_entity_type, force)
     -- Find all networks whose construction area covers this position
     local networks = surface.find_logistic_networks_by_construction_area(position, force)
     
@@ -709,47 +731,50 @@ local function find_network_for_bot(surface, position, bot_type, force)
         return nil
     end
     
-    local target_entity = nil
-    local selected_network = nil
-    local network_type = nil
+    -- Categorize networks by owner type
+    local vehicle_networks = {}
+    local character_networks = {}
+    local roboport_networks = {}
     
-    -- For construction bots, prioritize vehicle networks
-    if bot_type == "construction-robot" then
-        -- First pass: look for vehicle networks
-        for i, network in pairs(networks) do
-            if network and network.valid and network.cells and #network.cells > 0 then
-                local owner = network.cells[1].owner
-                if owner and owner.valid and (owner.type == "spider-vehicle" or owner.type == "car") then
-                    target_entity = owner
-                    selected_network = network
-                    network_type = "vehicle"
-                    break
+    for _, network in pairs(networks) do
+        if network and network.valid and network.cells and #network.cells > 0 then
+            local owner = network.cells[1].owner
+            if owner and owner.valid then
+                if owner.type == "spider-vehicle" or owner.type == "car" then
+                    table.insert(vehicle_networks, {network = network, owner = owner})
+                elseif owner.type == "character" then
+                    table.insert(character_networks, {network = network, owner = owner})
+                elseif owner.type == "roboport" then
+                    table.insert(roboport_networks, {network = network, owner = owner})
                 end
             end
         end
     end
     
-    -- If no vehicle network found (or logistic bot), use first available network
-    if not selected_network then
-        -- Select the first roboport network available
-        for _, network in ipairs(networks) do
-            if network.valid and network.cells and #network.cells > 0 then
-                local cell = network.cells[1]
-                local target_entity = cell.owner
-                
-                if target_entity and target_entity.valid and (target_entity.type == "roboport") then
-                    selected_network = network
-                    break
-                end
-            end
+    -- Select network based on bot type and priority
+    local selected = nil
+    
+    if bot_entity_type == "construction-robot" then
+        -- Priority: vehicle → character → roboport
+        if #vehicle_networks > 0 then
+            selected = vehicle_networks[1]
+        elseif #character_networks > 0 then
+            selected = character_networks[1]
+        elseif #roboport_networks > 0 then
+            selected = roboport_networks[1]
+        end
+    else
+        -- Logistic bots: roboport only
+        if #roboport_networks > 0 then
+            selected = roboport_networks[1]
         end
     end
     
-    if target_entity and target_entity.valid then
+    if selected then
         return {
-            entity = target_entity,
-            network = selected_network,
-            type = network_type
+            entity = selected.owner,
+            network = selected.network,
+            type = selected.owner.type
         }
     end
     
@@ -912,9 +937,7 @@ function container_deployment.deploy_vehicle(player, container, tags, quantity)
         end
     end
     
-    if deployed > 0 then
-        --player.print("Deployed " .. deployed .. " " .. (tags.item_name or "vehicle"))
-    else
+    if deployed == 0 then
         player.print({"string-mod-setting.deploy-failed"})
     end
     
@@ -928,6 +951,7 @@ function container_deployment.deploy_bot(player, container, tags, quantity)
     quantity = quantity or tags.count or 1
     local item_name = tags.item_name
     local quality_name = tags.quality_name or "Normal"
+    local bot_entity_type = tags.bot_entity_type  -- "construction-robot" or "logistic-robot"
     
     -- Find and remove bots from inventory
     local inventory = container.get_inventory(defines.inventory.chest)
@@ -959,13 +983,20 @@ function container_deployment.deploy_bot(player, container, tags, quantity)
                     local target_network_info = find_network_for_bot(
                         container.surface,
                         deploy_pos,
-                        item_name,
+                        bot_entity_type,
                         player.force
                     )
                     
+                    -- Get the entity prototype to determine actual entity name
+                    local item_prototype = prototypes.item[item_name]
+                    local entity_name = item_name
+                    if item_prototype and item_prototype.place_result then
+                        entity_name = item_prototype.place_result.name
+                    end
+                    
                     -- Create bot entity
                     local bot = container.surface.create_entity({
-                        name = item_name,
+                        name = entity_name,
                         position = deploy_pos,
                         force = player.force,
                         quality = stack.quality,
@@ -990,16 +1021,73 @@ function container_deployment.deploy_bot(player, container, tags, quantity)
         end
     end
     
-    if deployed > 0 then
-        -- Check which network type covers the container position (for message)
-        local sample_network = find_network_for_bot(container.surface, container.position, item_name, player.force)
-        local message = {"string-mod-setting.deployed", deployed, item_name}
-        -- if sample_network and sample_network.type then
-        --     message = message .. " → " .. sample_network.type .. " network"
-        -- end
-        --player.print(message)
-    else
-        player.print("Failed to deploy bots")
+    if deployed == 0 then
+        player.print({"string-mod-setting.bot-deploy-failed"})
+    end
+    
+    -- Refresh GUI
+    container_deployment.remove_gui(player)
+    container_deployment.get_or_create_gui(player, container)
+end
+
+-- Deploy repair tools
+function container_deployment.deploy_repair_tool(player, container, tags, quantity)
+    quantity = quantity or tags.count or 1
+    local item_name = tags.item_name
+    local quality_name = tags.quality_name or "Normal"
+    
+    -- Find and remove repair tools from inventory
+    local inventory = container.get_inventory(defines.inventory.chest)
+    if not inventory then
+        return
+    end
+    
+    local deployed = 0
+    local remaining_to_deploy = quantity
+    
+    -- Try to insert into player's main inventory
+    local player_inventory = player.get_main_inventory()
+    if not player_inventory then
+        player.print({"string-mod-setting.no-inventory"})
+        return
+    end
+    
+    for i = 1, #inventory do
+        if remaining_to_deploy <= 0 then
+            break
+        end
+        
+        local stack = inventory[i]
+        if stack and stack.valid_for_read and stack.name == item_name then
+            local stack_quality = stack.quality and stack.quality.name or "Normal"
+            
+            if stack_quality == quality_name then
+                -- Transfer repair tools from this stack to player
+                local to_transfer = math.min(stack.count, remaining_to_deploy)
+                
+                local inserted = player_inventory.insert({
+                    name = item_name,
+                    count = to_transfer,
+                    quality = stack.quality
+                })
+                
+                if inserted > 0 then
+                    stack.count = stack.count - inserted
+                    deployed = deployed + inserted
+                    remaining_to_deploy = remaining_to_deploy - inserted
+                end
+                
+                if inserted < to_transfer then
+                    -- Player inventory is full
+                    player.print({"string-mod-setting.inventory-full"})
+                    break
+                end
+            end
+        end
+    end
+    
+    if deployed == 0 then
+        player.print({"string-mod-setting.deploy-failed"})
     end
     
     -- Refresh GUI
@@ -1011,7 +1099,7 @@ end
 function container_deployment.on_confirm_deployment(player)
     local container = storage.container_deployment_containers and storage.container_deployment_containers[player.index]
     if not container or not container.valid then
-        player.print("Container is no longer available")
+        player.print({"string-mod-setting.container-unavailable"})
         return
     end
     
@@ -1078,6 +1166,8 @@ function container_deployment.on_confirm_deployment(player)
         container_deployment.deploy_vehicle(player, container, tags, quantity)
     elseif tags.deploy_type == "bot" then
         container_deployment.deploy_bot(player, container, tags, quantity)
+    elseif tags.deploy_type == "repair_tool" then
+        container_deployment.deploy_repair_tool(player, container, tags, quantity)
     end
     
     -- Hide settings section after deployment (check if still valid first)

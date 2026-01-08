@@ -1,11 +1,6 @@
 -- scripts-sa/equipment-grid-fill.lua
 -- Feature to auto-fill equipment grid ghosts from inventory
--- Future Feature - allow vehicles to fill their own equipment when they have items in their own inventory?
-
--- Bug 1 if in cheat mode many normal, you can fill equipment remotely because you have opened the equipment grid
--- Possible fix - force open render mode if opening equipment grid in not render mode
--- Bug 2 - right clicking equipment that requires fuel in the grid should mark for deconstruction, but opens its fuel inventory instead
--- Possible fix - add a rubber button that puts a decon planner in hand
+-- Vehicle self-fill: Vehicles can fill their own equipment when they have items in their own inventory
 
 local vehicles_list = require("scripts.vehicles-list")
 local map_gui = require("scripts.map-gui")
@@ -15,19 +10,20 @@ local equipment_grid_fill = {}
 -- Button name constants
 equipment_grid_fill.BUTTON_NAME = "spider_launcher_equipment_fill_button"
 equipment_grid_fill.CARGO_POD_BUTTON_NAME = "spider_launcher_equipment_cargo_pod_button"
+equipment_grid_fill.DECON_PLANNER_BUTTON_NAME = "spider_launcher_equipment_decon_planner_button"
 equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME = "spider_launcher_equipment_toolbar"
 
 -- Check if opened is an equipment grid for a vehicle item
--- Returns: grid, inventory, stack_index if valid, nil otherwise
+-- Returns: grid, inventory, stack_index, is_deployed_vehicle if valid, nil otherwise
 function equipment_grid_fill.get_equipment_grid_context(player)
     if not player or not player.valid then
-        return nil, nil, nil
+        return nil, nil, nil, false
     end
     
     local opened = player.opened
     if not opened or not opened.valid then
         -- game.print("[EQUIP FILL CONTEXT] player.opened is nil or invalid")
-        return nil, nil, nil
+        return nil, nil, nil, false
     end
     
     -- Check if opened is an equipment grid
@@ -40,13 +36,14 @@ function equipment_grid_fill.get_equipment_grid_context(player)
     
     if not success or not has_equipment then
         -- game.print("[EQUIP FILL CONTEXT] Not an equipment grid")
-        return nil, nil, nil
+        return nil, nil, nil, false
     end
     
     -- game.print("[EQUIP FILL CONTEXT] Valid equipment grid found")
     
     -- It's an equipment grid - use itemstack_owner to find the item stack
     local grid = opened
+    local is_deployed_vehicle = false
     
     -- Get the item stack that owns this grid
     local success_owner, itemstack_owner = pcall(function()
@@ -55,7 +52,7 @@ function equipment_grid_fill.get_equipment_grid_context(player)
     
     if not success_owner or not itemstack_owner then
         -- game.print("[EQUIP FILL CONTEXT] Could not get itemstack_owner")
-        return grid, nil, nil
+        return grid, nil, nil, false
     end
     
     -- game.print("[EQUIP FILL CONTEXT] Found itemstack_owner: " .. tostring(itemstack_owner.name))
@@ -63,7 +60,7 @@ function equipment_grid_fill.get_equipment_grid_context(player)
     -- Verify it's a vehicle item
     if not vehicles_list.is_vehicle(itemstack_owner.name) then
         -- game.print("[EQUIP FILL CONTEXT] Itemstack owner is not a vehicle")
-        return grid, nil, nil
+        return grid, nil, nil, false
     end
     
     -- Get the entity owner to find which inventory contains this stack
@@ -74,25 +71,46 @@ function equipment_grid_fill.get_equipment_grid_context(player)
     if success_entity and entity_owner and entity_owner.valid then
         -- game.print("[EQUIP FILL CONTEXT] Found entity_owner: " .. tostring(entity_owner.name))
         
-        -- Try to get inventory from entity (could be a container, vehicle, etc.)
-        local inventory_types = {
-            defines.inventory.chest,
-            defines.inventory.car_trunk,
-            defines.inventory.spider_trunk,
-            defines.inventory.cargo_wagon
-        }
-        
-        for _, inv_type in ipairs(inventory_types) do
-            local success_inv, inventory = pcall(function()
-                return entity_owner.get_inventory(inv_type)
-            end)
-            if success_inv and inventory then
-                -- Find the stack index in this inventory
-                for i = 1, #inventory do
-                    local stack = inventory[i]
-                    if stack == itemstack_owner then
-                        -- game.print("[EQUIP FILL CONTEXT] Found stack at index " .. i .. " in entity inventory")
-                        return grid, inventory, i
+        -- Check if entity_owner IS the vehicle itself (deployed vehicle)
+        if vehicles_list.is_vehicle(entity_owner.name) then
+            is_deployed_vehicle = true
+            -- For deployed vehicles, use their trunk inventory
+            local inventory_types = {
+                defines.inventory.spider_trunk,
+                defines.inventory.car_trunk
+            }
+            
+            for _, inv_type in ipairs(inventory_types) do
+                local success_inv, inventory = pcall(function()
+                    return entity_owner.get_inventory(inv_type)
+                end)
+                if success_inv and inventory then
+                    -- game.print("[EQUIP FILL CONTEXT] Found vehicle trunk inventory (deployed)")
+                    return grid, inventory, nil, true
+                end
+            end
+        else
+            -- Entity owner is a container (chest, cargo wagon, etc.) holding the vehicle item
+            -- Try to get inventory from entity
+            local inventory_types = {
+                defines.inventory.chest,
+                defines.inventory.car_trunk,
+                defines.inventory.spider_trunk,
+                defines.inventory.cargo_wagon
+            }
+            
+            for _, inv_type in ipairs(inventory_types) do
+                local success_inv, inventory = pcall(function()
+                    return entity_owner.get_inventory(inv_type)
+                end)
+                if success_inv and inventory then
+                    -- Find the stack index in this inventory
+                    for i = 1, #inventory do
+                        local stack = inventory[i]
+                        if stack == itemstack_owner then
+                            -- game.print("[EQUIP FILL CONTEXT] Found stack at index " .. i .. " in entity inventory")
+                            return grid, inventory, i, false
+                        end
                     end
                 end
             end
@@ -116,7 +134,7 @@ function equipment_grid_fill.get_equipment_grid_context(player)
                 local stack = main_inv[i]
                 if stack == itemstack_owner then
                     -- game.print("[EQUIP FILL CONTEXT] Found stack at index " .. i .. " in player main inventory")
-                    return grid, main_inv, i
+                    return grid, main_inv, i, false
                 end
             end
         end
@@ -127,14 +145,14 @@ function equipment_grid_fill.get_equipment_grid_context(player)
             -- game.print("[EQUIP FILL CONTEXT] Found stack in player cursor")
             -- For cursor, return player's main inventory for searching
             if success_main and main_inv then
-                return grid, main_inv, nil
+                return grid, main_inv, nil, false
             end
         end
     end
     
     -- If we still haven't found it, return grid with nil inventory
     -- game.print("[EQUIP FILL CONTEXT] Could not find inventory containing the item stack")
-    return grid, nil, nil
+    return grid, nil, nil, false
 end
 
 -- Get ghost equipment from a grid
@@ -506,7 +524,7 @@ function equipment_grid_fill.get_or_create_fill_button(player)
         return nil
     end
     
-    local grid, inventory, stack_index = equipment_grid_fill.get_equipment_grid_context(player)
+    local grid, inventory, stack_index, is_deployed = equipment_grid_fill.get_equipment_grid_context(player)
     -- game.print("[EQUIP FILL] get_equipment_grid_context returned: grid=" .. tostring(grid ~= nil) .. ", inventory=" .. tostring(inventory ~= nil))
     if not grid or not grid.valid then
         -- Not an equipment grid - remove button if it exists
@@ -925,6 +943,16 @@ function equipment_grid_fill.get_or_create_fill_button(player)
         sprite = "ovd_cargo_pod",
         style = "slot_sized_button",
         tooltip = "string-mod-setting.open-orbital-deployment-menu",
+        enabled = true
+    }
+    
+    -- Create deconstruction planner button
+    local decon_button = button_flow.add{
+        type = "sprite-button",
+        name = equipment_grid_fill.DECON_PLANNER_BUTTON_NAME .. "_btn",
+        sprite = "utility/deconstruction_mark",
+        style = "slot_sized_button",
+        tooltip = {"item-name.deconstruction-planner"},
         enabled = true
     }
     
@@ -1774,5 +1802,138 @@ function equipment_grid_fill.on_cargo_pod_button_click(player)
     end
 end
 
-return equipment_grid_fill
+-- Handle deconstruction planner button click
+function equipment_grid_fill.on_decon_planner_button_click(player)
+    if not player or not player.valid then
+        return
+    end
+    
+    -- Clear cursor first
+    local cursor_stack = player.cursor_stack
+    if cursor_stack and cursor_stack.valid then
+        cursor_stack.clear()
+    end
+    
+    -- Put deconstruction planner in cursor
+    cursor_stack.set_stack("deconstruction-planner")
+end
 
+-- Check if player is in normal controller mode and has equipment grid open
+function equipment_grid_fill.check_and_force_render_mode(player)
+    if not player or not player.valid then
+        return
+    end
+    
+    if player.controller_type ~= defines.controllers.character then
+        return
+    end
+    
+    local opened = player.opened
+    if not opened or not opened.valid then
+        return
+    end
+    
+    local success, has_equipment = pcall(function()
+        return opened.equipment ~= nil
+    end)
+    
+    if not success or not has_equipment then
+        return
+    end
+    
+    local grid = opened
+    local success_entity, entity_owner = pcall(function()
+        return grid.entity_owner
+    end)
+    
+    if not success_entity or not entity_owner or not entity_owner.valid then
+        return
+    end
+    
+    local is_deployed_vehicle = vehicles_list.is_vehicle(entity_owner.name)
+    
+    storage.pending_equipment_reopen = storage.pending_equipment_reopen or {}
+    
+    if is_deployed_vehicle then
+        storage.pending_equipment_reopen[player.index] = {
+            entity = entity_owner,
+            is_vehicle = true,
+            tick = game.tick
+        }
+    else
+        local success_owner, itemstack_owner = pcall(function()
+            return grid.itemstack_owner
+        end)
+        
+        if success_owner and itemstack_owner then
+            storage.pending_equipment_reopen[player.index] = {
+                entity = entity_owner,
+                item_name = itemstack_owner.name,
+                is_vehicle = false,
+                tick = game.tick
+            }
+        end
+    end
+    
+    player.set_controller{
+        type = defines.controllers.remote,
+        surface = player.surface,
+        position = player.position
+    }
+end
+
+-- Event handler for on_gui_opened - call from control.lua
+function equipment_grid_fill.on_gui_opened(event)
+    local player = game.get_player(event.player_index)
+    if not player or not player.valid then
+        game.print("DEBUG: on_gui_opened - Player invalid")
+        return
+    else
+        game.print("DEBUG: on_gui_opened - Player valid")
+    end
+    
+    -- Bug 1 fix: Force render mode when opening equipment grid remotely
+    equipment_grid_fill.check_and_force_render_mode(player)
+    
+    -- Create/refresh fill button and toolbar
+    equipment_grid_fill.get_or_create_fill_button(player)
+end
+
+-- Event handler for on_gui_click - call from control.lua
+function equipment_grid_fill.on_gui_click(event)
+    local player = game.get_player(event.player_index)
+    if not player or not player.valid then
+        return
+    end
+    
+    local element = event.element
+    if not element or not element.valid then
+        return
+    end
+    
+    -- Handle fill button click
+    if element.name == equipment_grid_fill.BUTTON_NAME .. "_btn" then
+        equipment_grid_fill.on_fill_button_click(player)
+        return
+    end
+    
+    -- Handle cargo pod button click
+    if element.name == equipment_grid_fill.CARGO_POD_BUTTON_NAME .. "_btn" then
+        equipment_grid_fill.on_cargo_pod_button_click(player)
+        return
+    end
+    
+    -- Handle deconstruction planner button click
+    if element.name == equipment_grid_fill.DECON_PLANNER_BUTTON_NAME .. "_btn" then
+        equipment_grid_fill.on_decon_planner_button_click(player)
+        return
+    end
+    
+    -- Handle equipment toolbar item clicks
+    if element.name and element.name:match("^" .. equipment_grid_fill.EQUIPMENT_TOOLBAR_NAME .. "_") then
+        equipment_grid_fill.on_equipment_item_click(player, element.name, element.tags)
+        return
+    end
+end
+
+return equipment_grid_fill

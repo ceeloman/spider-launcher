@@ -171,6 +171,10 @@ end)
 script.on_event(defines.events.on_gui_click, function(event)
     local element = event.element
     if not element or not element.valid then return end
+
+    if equipment_grid_fill then
+        equipment_grid_fill.on_gui_click(event)
+    end
     
     -- Handle stack buttons (both SA and SE)
     if element.tags and element.tags.action == "add_stack" then
@@ -504,7 +508,7 @@ script.on_event(defines.events.on_gui_opened, function(event)
             }
         end
         
-        equipment_grid_fill.get_or_create_fill_button(player)
+        equipment_grid_fill.on_gui_opened(event)
     end
 
     local opened = player.opened
@@ -646,6 +650,40 @@ script.on_event(defines.events.on_tick, function(event)
                     end
                     storage.pending_grid_open[player_index] = nil
                 end
+            end
+        end
+    end
+
+    -- Handle pending equipment grid reopens (after render mode switch)
+    if equipment_grid_fill and storage.pending_equipment_reopen then
+        for player_index, data in pairs(storage.pending_equipment_reopen) do
+            if game.tick > data.tick then  -- Just 1 tick wait
+                local player = game.get_player(player_index)
+                
+                if player and player.valid and data.entity and data.entity.valid then
+                    if data.is_vehicle then
+                        player.opened = data.entity
+                    else
+                        player.opened = data.entity
+                        
+                        local inv = data.entity.get_inventory(defines.inventory.chest)
+                        if inv then
+                            for i = 1, #inv do
+                                local stack = inv[i]
+                                if stack and stack.valid_for_read and stack.name == data.item_name and stack.grid then
+                                    player.opened = stack.grid
+                                    if not player.opened or player.opened ~= stack.grid then
+                                        player.opened = stack
+                                    end
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    
+                    equipment_grid_fill.get_or_create_fill_button(player)
+                end
+                storage.pending_equipment_reopen[player_index] = nil
             end
         end
     end
