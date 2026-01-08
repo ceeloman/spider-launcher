@@ -199,9 +199,9 @@ function platform_gui.get_or_create_deploy_button(player, opened_entity)
     local deploy_button = button_flow.add{
         type = "button",
         name = platform_gui.DEPLOY_BUTTON_NAME .. "_btn",
-        caption = {"", "[img=ovd_cargo_pod]", " Deploy a vehicle to ", planet_name},
+        caption = {"", "[img=ovd_cargo_pod] ", {"string-mod-setting.deploy-vehicle-to", planet_name}},
         style = "button",
-        tooltip = {"", "Open deployment menu to deploy a vehicle to ", planet_name}
+        tooltip = {"string-mod-setting.open-deployment-menu", planet_name}
     }
 
     if deploy_button and deploy_button.valid then

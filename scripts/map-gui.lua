@@ -61,7 +61,7 @@ local function create_quality_overlay(parent, quality)
         local quality_overlay = parent.add{
             type = "sprite",
             sprite = overlay_name,
-            tooltip = get_quality_name(quality) .. " quality"
+            tooltip = {"string-mod-setting.quality-tooltip", get_quality_name(quality)}
         }
         quality_overlay.style.size = 14
         quality_overlay.style.top_padding = 13
@@ -135,6 +135,7 @@ end
 
 -- SE-SPECIFIC: Helper function to check if a zone type is a space type
 local function is_space_zone_type(zone_type)
+    -- What other zone types are there?
     return zone_type == "orbit" or zone_type == "asteroid-belt" or zone_type == "asteroid-field"
 end
 
@@ -244,7 +245,7 @@ local function add_item_entry(items_table, item, item_info)
         right_flow.style.horizontally_stretchable = true
         right_flow.add{
             type = "label",
-            caption = "Not available",
+            caption = "string-mod-setting.not-available",
             tooltip = {"string-mod-setting.no-items-available", item.display_name}
         }.style.font_color = {r=0.5, g=0.5, b=0.5}
     end
@@ -304,6 +305,7 @@ local function find_orbital_vehicles_sa(player_surface)
                                         local color = stack.entity_color
                                         local quality = stack.quality
                                         
+                                        -- is this viewable by the player?
                                         local tooltip = {"", "Platform: ", surface.name, "\nSlot: ", i}
                                         local entity_name = stack.name
                                         
@@ -446,6 +448,7 @@ local function find_orbital_vehicles_se(player_surface, player)
                                     local color = stack.entity_color
                                     local quality = stack.quality
                                     
+                                    -- is this viewable by the player?
                                     local tooltip = "Space Surface: " .. target_orbit_surface.name .. "\nSlot: " .. i
                                     local entity_name = stack.name
                                     
@@ -683,7 +686,7 @@ function map_gui.show_deployment_menu(player, vehicles)
     
     local title_label = title_flow.add{
         type = "label",
-        caption = {"", " Orbital Deployment"},
+        caption = {"string-mod-setting.orbital-deployment"},
         style = "frame_title"
     }
     title_label.drag_target = frame
@@ -754,7 +757,7 @@ function map_gui.show_deployment_menu(player, vehicles)
     local vehicles_tab = tabbed_pane.add{
         type = "tab",
         name = "vehicles_tab",
-        caption = "[img=item/spidertron] Vehicles",
+        caption = {"", "[img=item/spidertron] ", {"string-mod-setting.vehicles"}},
         tooltip = {"string-mod-setting.deploy-from-orbit", planet_display_name}
     }
     
@@ -880,7 +883,7 @@ function map_gui.show_deployment_menu(player, vehicles)
     local supplies_tab = tabbed_pane.add{
         type = "tab",
         name = "supplies_tab",
-        caption = "[img=item/construction-robot] Robots",
+        caption = {"", "[img=item/construction-robot] ", {"string-mod-setting.robots"}},
         tooltip = {"string-mod-setting.deploy-supplies"}
     }
     
@@ -1292,7 +1295,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     }
     local title_label = title_flow.add{
         type = "label",
-        caption = {"", " Deployment Menu"},
+        caption = {"string-mod-setting.deployment-menu"},
         style = "frame_title"
     }
     title_label.drag_target = frame
@@ -1339,7 +1342,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
     local utilities_tab = tabbed_pane.add{
         type = "tab",
         name = "utilities_tab",
-        caption = "[img=item/repair-pack] Utilities"
+        caption = {"", "[img=item/repair-pack] ", {"string-mod-setting.utilities"}},
     }
     local utilities_content = tabbed_pane.add{
         type = "flow",
@@ -1369,7 +1372,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         local ammo_tab = tabbed_pane.add{
             type = "tab",
             name = "ammo_tab",
-            caption = "[img=item/firearm-magazine] Ammo",
+            caption = {"", "[img=item/firearm-magazine] ", {"string-mod-setting.ammo"}},
             --tooltip = {"string-mod-setting.ammo"}
         }
         local ammo_content = tabbed_pane.add{
@@ -1408,7 +1411,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         local fuel_tab = tabbed_pane.add{
             type = "tab",
             name = "fuel_tab",
-            caption = "[img=item/rocket-fuel] Fuel",
+                caption = {"", "[img=item/rocket-fuel] ", {"string-mod-setting.fuel"}},
             --tooltip = {"string-mod-setting.fuel"}
         }
         local fuel_content = tabbed_pane.add{
@@ -1444,12 +1447,12 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
         tabbed_pane.add_tab(fuel_tab, fuel_content)
     end
     
-    -- Equipment tab (SA + TFMG only)
+    -- Equipment tab
     if has_equipment then
         local equipment_tab = tabbed_pane.add{
             type = "tab",
             name = "equipment_tab",
-            caption = "[img=item/personal-roboport-equipment] Equipment"
+            caption = {"", "[img=item/personal-roboport-equipment] ", {"string-mod-setting.equipment"}},
         }
         local equipment_content = tabbed_pane.add{
             type = "flow",
@@ -1760,7 +1763,7 @@ function handle_extras_menu_clicks(event)
         
         local vehicles = map_gui.find_orbital_vehicles(player.surface, player)
         if #vehicles == 0 then
-            player.print("No vehicles are deployable to this surface.")
+            player.print("string-mod-setting.error-no-vehicles-deployable-here")
         else
             map_gui.show_deployment_menu(player, vehicles)
         end
@@ -1801,8 +1804,7 @@ function handle_extras_menu_clicks(event)
                             -- Fall through
                         else
                             tabbed_pane.selected_tab_index = equipment_tab_index
-                            player.print("[color=yellow]Unfulfilled equipment requests. Review equipment tab before deploying.[/color]")
-                            return
+                            player.print({"", "[color=yellow]", {"string-mod-setting.unfulfilled-equipment-warning"}, "[/color]"})                            return
                         end
                     end
                 end

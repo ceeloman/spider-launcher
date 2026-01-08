@@ -4,6 +4,8 @@
 
 -- Bug 1 if in cheat mode many normal, you can fill equipment remotely because you have opened the equipment grid
 -- Possible fix - force open render mode if opening equipment grid in not render mode
+-- Bug 2 - right clicking equipment that requires fuel in the grid should mark for deconstruction, but opens its fuel inventory instead
+-- Possible fix - add a rubber button that puts a decon planner in hand
 
 local vehicles_list = require("scripts.vehicles-list")
 local map_gui = require("scripts.map-gui")
@@ -922,7 +924,7 @@ function equipment_grid_fill.get_or_create_fill_button(player)
         name = equipment_grid_fill.CARGO_POD_BUTTON_NAME .. "_btn",
         sprite = "ovd_cargo_pod",
         style = "slot_sized_button",
-        tooltip = "Open Orbital Deployment Menu",
+        tooltip = "string-mod-setting.open-orbital-deployment-menu",
         enabled = true
     }
     
@@ -1757,7 +1759,7 @@ function equipment_grid_fill.on_cargo_pod_button_click(player)
                 return
             end
         else
-            player.print("Vehicle Deployment is not possible while the platform is in transit")
+            player.print("string-mod-setting.platform-in-transit")
             return
         end
     end

@@ -169,7 +169,9 @@ end
 local function find_compatible_slots_by_category(vehicle, ammo_inventory)
     local slots_by_category = {}
     local ammo_slot_count = #ammo_inventory
-    
+    -- tries to place test ammo, if successful then we determine the slot ammo type
+    -- is there a correct way to do this?
+    -- it works so leave it?
     local test_ammo = {
         ["bullet"] = "firearm-magazine",
         ["cannon-shell"] = "cannon-shell",
@@ -1148,7 +1150,7 @@ function deployment.deploy_supplies(player, target_surface, selected_bots)
     end
     
     if not hub or not hub_inventory then
-        player.print("Could not find platform with required robots")
+        player.print("string-mod-setting.no-robots-in-platform")
         return
     end
     
@@ -1249,8 +1251,8 @@ function deployment.deploy_supplies(player, target_surface, selected_bots)
     local temp_destination_surface = actual_surface
     
     if is_same_surface then
-        -- ISSUE - when testing SE, we shouold identify if the zone / surface is a planet and restrict deployment. 
-        -- at the same time, you shoulndt be able to place cargo bays on planet tiles, but you can place them on spaceship tiles which can be placed on planet surfaces. 
+        -- ISSUE - when testing SE, we should identify if the zone / surface is a planet and restrict deployment. 
+        -- at the same time, you shouldn't be able to place cargo bays on planet tiles, but you can place them on spaceship tiles which can be placed on planet surfaces. 
         -- so deployment bays can be placed on planet surfaces so we do need to ensure this is restricted. 
         -- maybe the check ignores cargo bays on planet surfaces. 
         local nauvis = game.surfaces["nauvis"]
