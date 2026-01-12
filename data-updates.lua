@@ -1,81 +1,117 @@
 -- data-updates.lua
-local procession_graphic_catalogue_types = require("__base__/prototypes/planet/procession-graphic-catalogue-types")
+    if mods["space-exploration"] then
+    local procession_graphic_catalogue_types = require("__base__/prototypes/planet/procession-graphic-catalogue-types")
 
--- Create 40 planets for SE surface cargo pod support
-for i = 1, 40 do
-    data:extend({
-        {
-            type = "planet",
-            name = "ovd-se-planet-" .. i,
-            icon = "__base__/graphics/icons/cargo-pod.png",
-            --icon_size = 1,
-            gravity_pull = 10,
-            distance = 30,
-            orientation = 0.275,
-            magnitude = 1,
-            order = "z[hidden-" .. i .. "]", 
-            map_seed_offset = i,
-            pollutant_type = nil,
-            solar_power_in_space = 100,
-            localised_name = " ",
-            hidden = true,
-            planet_procession_set = {
-                arrival = {"default-b"},
-                departure = {"default-a"}
-            },
-            surface_properties = {
-                ["day-night-cycle"] = 85 * 60,
-                ["solar-power"] = 10,
-            },
-            procession_graphic_catalogue = {
-                {
-                    index = procession_graphic_catalogue_types.planet_hatch_emission_in_1,
-                    sprite = util.sprite_load("__base__/graphics/entity/cargo-hubs/hatches/planet-lower-hatch-pod-emission-A", {
-                        priority = "medium",
-                        draw_as_glow = true,
-                        blend_mode = "additive",
-                        scale = 0.5,
-                        shift = util.by_pixel(-16, 96)
-                    })
+    -- Create 40 planets for SE surface cargo pod support
+    for i = 1, 40 do
+        data:extend({
+            {
+                type = "planet",
+                name = "ovd-se-planet-" .. i,
+                icon = "__base__/graphics/icons/cargo-pod.png",
+                --icon_size = 1,
+                gravity_pull = 10,
+                distance = 30,
+                orientation = 0.275,
+                magnitude = 1,
+                order = "z[hidden-" .. i .. "]", 
+                map_seed_offset = i,
+                pollutant_type = nil,
+                solar_power_in_space = 100,
+                localised_name = " ",
+                hidden = true,
+                planet_procession_set = {
+                    arrival = {"default-b"},
+                    departure = {"default-a"}
                 },
-                {
-                    index = procession_graphic_catalogue_types.planet_hatch_emission_in_2,
-                    sprite = util.sprite_load("__base__/graphics/entity/cargo-hubs/hatches/planet-lower-hatch-pod-emission-B", {
-                        priority = "medium",
-                        draw_as_glow = true,
-                        blend_mode = "additive",
-                        scale = 0.5,
-                        shift = util.by_pixel(-64, 96)
-                    })
+                surface_properties = {
+                    ["day-night-cycle"] = 85 * 60,
+                    ["solar-power"] = 10,
                 },
-                {
-                    index = procession_graphic_catalogue_types.planet_hatch_emission_in_3,
-                    sprite = util.sprite_load("__base__/graphics/entity/cargo-hubs/hatches/planet-lower-hatch-pod-emission-C", {
-                        priority = "medium",
-                        draw_as_glow = true,
-                        blend_mode = "additive",
-                        scale = 0.5,
-                        shift = util.by_pixel(-40, 64)
-                    })
+                procession_graphic_catalogue = {
+                    {
+                        index = procession_graphic_catalogue_types.planet_hatch_emission_in_1,
+                        sprite = util.sprite_load("__base__/graphics/entity/cargo-hubs/hatches/planet-lower-hatch-pod-emission-A", {
+                            priority = "medium",
+                            draw_as_glow = true,
+                            blend_mode = "additive",
+                            scale = 0.5,
+                            shift = util.by_pixel(-16, 96)
+                        })
+                    },
+                    {
+                        index = procession_graphic_catalogue_types.planet_hatch_emission_in_2,
+                        sprite = util.sprite_load("__base__/graphics/entity/cargo-hubs/hatches/planet-lower-hatch-pod-emission-B", {
+                            priority = "medium",
+                            draw_as_glow = true,
+                            blend_mode = "additive",
+                            scale = 0.5,
+                            shift = util.by_pixel(-64, 96)
+                        })
+                    },
+                    {
+                        index = procession_graphic_catalogue_types.planet_hatch_emission_in_3,
+                        sprite = util.sprite_load("__base__/graphics/entity/cargo-hubs/hatches/planet-lower-hatch-pod-emission-C", {
+                            priority = "medium",
+                            draw_as_glow = true,
+                            blend_mode = "additive",
+                            scale = 0.5,
+                            shift = util.by_pixel(-40, 64)
+                        })
+                    }
                 }
             }
-        }
-    })
+        })
+    end
+
+    log("[OVD] Created 40 SE-compatible planets")
+
+    -- Unlock deployment container recipe with se-space-capsule-navigation technology
+    local tech = data.raw["technology"]["se-space-capsule-navigation"]
+    if tech then
+        if not tech.effects then
+            tech.effects = {}
+        end
+        table.insert(tech.effects, {
+            type = "unlock-recipe",
+            recipe = "ovd-deployment-container"
+        })
+        log("[OVD] Added ovd-deployment-container recipe unlock to se-space-capsule-navigation technology")
+    else
+        log("[OVD] WARNING: se-space-capsule-navigation technology not found!")
+    end
+
+else
+    log("[OVD] Space Exploration not detected, skipping SE planet creation")
 end
 
-log("[OVD] Created 40 SE-compatible planets")
-
--- Unlock deployment container recipe with se-space-capsule-navigation technology
-local tech = data.raw["technology"]["se-space-capsule-navigation"]
-if tech then
-    if not tech.effects then
-        tech.effects = {}
+-- Remove SE planets if Space Exploration is not installed
+if not script.active_mods["space-exploration"] then
+    log("[OVD] Space Exploration not installed, removing SE planets from existing save")
+    
+    for i = 1, 40 do
+        local planet_name = "ovd-se-planet-" .. i
+        local surface = game.surfaces[planet_name]
+        
+        if surface then
+            -- Check if any players are on this surface
+            local players_on_surface = surface.find_entities_filtered{type = "character"}
+            if #players_on_surface > 0 then
+                log("[OVD] WARNING: Players found on " .. planet_name .. ", moving to nauvis")
+                for _, player_character in pairs(players_on_surface) do
+                    if player_character.player then
+                        player_character.player.teleport({0, 0}, game.surfaces["nauvis"])
+                    end
+                end
+            end
+            
+            -- Delete the surface
+            game.delete_surface(surface)
+            log("[OVD] Deleted surface: " .. planet_name)
+        end
     end
-    table.insert(tech.effects, {
-        type = "unlock-recipe",
-        recipe = "ovd-deployment-container"
-    })
-    log("[OVD] Added ovd-deployment-container recipe unlock to se-space-capsule-navigation technology")
+    
+    log("[OVD] SE planet cleanup complete")
 else
-    log("[OVD] WARNING: se-space-capsule-navigation technology not found!")
+    log("[OVD] Space Exploration installed, keeping SE planets")
 end
