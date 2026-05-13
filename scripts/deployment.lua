@@ -63,6 +63,19 @@ local function is_space_exploration_active()
     return remote.interfaces["space-exploration"] ~= nil
 end
 
+local function print_pod_launched_message(player, actual_surface, actual_position)
+    if not player or not player.valid then
+        return
+    end
+    if not actual_surface or not actual_surface.valid or not actual_position then
+        return
+    end
+    -- Rich text [gps=...] (same as shift-click / TFMG); {"gps", ...} is not a valid LocalisedString key in 2.0
+    local px = math.floor(actual_position.x + 0.5)
+    local py = math.floor(actual_position.y + 0.5)
+    player.print({"string-mod-setting.pod-launched-deploying-to-gps", string.format("[gps=%d,%d,%s]", px, py, actual_surface.name)})
+end
+
 -- Find first available planet from the pool (SE-specific)
 local function get_available_planet()
     for i = 1, 40 do
@@ -137,9 +150,6 @@ local function get_ammo_damage(ammo_name)
         if ammo_prototype.type == "ammo" and type(ammo_prototype.get_ammo_type) == "function" then
             local ammo_data = ammo_prototype.get_ammo_type()
             if ammo_data then
-                -- Just print the top-level keys to see structure
-                game.print("Ammo data keys: " .. serpent.line(table_keys(ammo_data)))
-                
                 if ammo_data.action then
                     game.print("Has action, keys: " .. serpent.line(table_keys(ammo_data.action)))
                     if ammo_data.action.action_delivery then
@@ -688,6 +698,8 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
     }
     
     cargo_pod.cargo_pod_origin = hub
+
+    print_pod_launched_message(player, actual_surface, actual_position)
     
     -- Save deployment information
     if not storage.pending_pod_deployments then
@@ -1277,6 +1289,8 @@ function deployment.deploy_supplies(player, target_surface, selected_bots)
     }
     
     cargo_pod.cargo_pod_origin = hub
+
+    print_pod_launched_message(player, actual_surface, actual_position)
     
     -- Store deployment data
     if not storage.pending_pod_deployments then

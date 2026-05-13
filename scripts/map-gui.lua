@@ -2063,13 +2063,8 @@ function map_gui.on_gui_click(event)
             return
         end
         
-        player.opened = grid
-        
-        local opened = player.opened
-        
-        if not opened or opened ~= grid then
-            player.opened = vehicle_stack
-        end
+        -- Item stack GUI includes equipment; opening LuaEquipmentGrid breaks mods that read opened.type.
+        player.opened = vehicle_stack
         
         return
     end
@@ -2147,12 +2142,8 @@ function map_gui.on_gui_click(event)
             return
         end
 
-        player.opened = grid
-        
-        local opened = player.opened
-        if not opened or opened ~= grid then
-            player.opened = vehicle_stack
-        end
+        -- Item stack GUI includes equipment; opening LuaEquipmentGrid breaks mods that read opened.type.
+        player.opened = vehicle_stack
         
         return
     end

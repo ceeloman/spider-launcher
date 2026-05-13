@@ -24,7 +24,7 @@ function container_deployment.has_deployable_items(container)
         local stack = inventory[i]
         if stack and stack.valid_for_read then
             -- Check if it's a spider vehicle
-            if vehicles_list.is_spider_vehicle(stack.name) then
+            if vehicles_list.is_spider_vehicle_deployable_from_container(stack.name) then
                 return true
             end
             
@@ -74,8 +74,8 @@ function container_deployment.scan_deployable_items(container)
                 local is_entity_data = item_prototype.type == "item-with-entity-data"
                 
                 -- Spider vehicles
-                if vehicles_list.is_spider_vehicle(item_name) then
-                    table.insert(result.vehicles, {
+                if vehicles_list.is_spider_vehicle_deployable_from_container(item_name) then
+                    local vehicle_entry = {
                         name = item_name,
                         stack = stack,
                         index = i,
@@ -83,9 +83,13 @@ function container_deployment.scan_deployable_items(container)
                         quality = stack.quality,
                         stack_size = stack_size,
                         is_entity_data = is_entity_data,
-                        entity_label = stack.entity_label or nil,
-                        entity_color = stack.entity_color or nil
-                    })
+                    }
+                    -- entity_label / entity_color are only defined on item-with-entity-data stacks
+                    if is_entity_data then
+                        vehicle_entry.entity_label = stack.entity_label or nil
+                        vehicle_entry.entity_color = stack.entity_color or nil
+                    end
+                    table.insert(result.vehicles, vehicle_entry)
                 -- Construction robots
                 elseif vehicles_list.is_construction_robot(item_name) then
                     -- Group by quality
@@ -799,21 +803,39 @@ function container_deployment.deploy_vehicle(player, container, tags, quantity)
     if not stack or not stack.valid_for_read then
         return
     end
+
+    if not vehicles_list.is_spider_vehicle_deployable_from_container(stack.name) then
+        return
+    end
     
     -- Cap quantity to available count
     quantity = math.min(quantity, stack.count)
     
+    local item_prototype_for_stack = prototypes.item[stack.name]
+    local is_entity_data = tags.is_entity_data
+    if is_entity_data == nil and item_prototype_for_stack then
+        is_entity_data = item_prototype_for_stack.type == "item-with-entity-data"
+    else
+        is_entity_data = is_entity_data == true
+    end
+
     local deployed = 0
     for i = 1, quantity do
-        -- Extract all vehicle data BEFORE creating entity
-        local vehicle_name = stack.entity_label or stack.name
-        local vehicle_color = stack.entity_color
+        -- Extract all vehicle data BEFORE creating entity (label/color/grid only exist on item-with-entity-data)
+        local vehicle_name = stack.name
+        local vehicle_color = nil
         local quality = stack.quality
-        local has_grid = stack.grid ~= nil
+        local has_grid = false
         local grid_data = {}
-        
+
+        if is_entity_data then
+            vehicle_name = stack.entity_label or stack.name
+            vehicle_color = stack.entity_color
+            has_grid = stack.grid ~= nil
+        end
+
         -- Extract equipment grid data
-        if has_grid and stack.grid then
+        if is_entity_data and has_grid and stack.grid then
             for _, equipment in pairs(stack.grid.equipment) do
                 if equipment and equipment.valid then
                     -- Skip equipment ghosts - they can't be placed
@@ -855,10 +877,21 @@ function container_deployment.deploy_vehicle(player, container, tags, quantity)
         
         -- Spawn exactly at container position
         local deploy_pos = container.position
-        
+
+        -- Entity prototype name (item name may differ, e.g. plain item vs item-with-entity-data)
+        local entity_name = stack.name
+        if item_prototype_for_stack and item_prototype_for_stack.place_result then
+            local pr = item_prototype_for_stack.place_result
+            if type(pr) == "string" then
+                entity_name = pr
+            elseif pr.name then
+                entity_name = pr.name
+            end
+        end
+
         -- Create the entity
         local created_entity = container.surface.create_entity({
-            name = stack.name,
+            name = entity_name,
             position = deploy_pos,
             force = player.force,
             quality = quality,

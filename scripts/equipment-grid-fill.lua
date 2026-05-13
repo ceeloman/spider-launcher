@@ -1885,12 +1885,12 @@ end
 -- Event handler for on_gui_opened - call from control.lua
 function equipment_grid_fill.on_gui_opened(event)
     local player = game.get_player(event.player_index)
-    if not player or not player.valid then
-        game.print("DEBUG: on_gui_opened - Player invalid")
-        return
-    else
-        game.print("DEBUG: on_gui_opened - Player valid")
-    end
+    -- if not player or not player.valid then
+    --     game.print("DEBUG: on_gui_opened - Player invalid")
+    --     return
+    -- else
+    --     game.print("DEBUG: on_gui_opened - Player valid")
+    -- end
     
     -- Bug 1 fix: Force render mode when opening equipment grid remotely
     equipment_grid_fill.check_and_force_render_mode(player)

@@ -10,6 +10,19 @@ vehicles_list.excluded_names = {
     ["fluid-wagon"] = true,
 }
 
+-- Spider-vehicle items that must not use chest remote deployment (e.g. Spiderbots companion units).
+-- Matched against the mined item name.
+vehicles_list.container_excluded_spider_vehicle_item_names = {
+    ["spiderbot"] = true,
+    ["spider-bot"] = true,
+}
+
+-- Matched against the entity placed by the item (place_result), if any.
+vehicles_list.container_excluded_spider_vehicle_entity_names = {
+    ["spiderbot"] = true,
+    ["spider-bot"] = true,
+}
+
 -- Initialize vehicle lists
 function vehicles_list.initialize()
     -- Ensure lists are initialized
@@ -94,6 +107,25 @@ function vehicles_list.is_spider_vehicle(item_name)
     end
 
     return false
+end
+
+-- Spider vehicles allowed in container remote deployment GUI (excludes spiderbots, etc.)
+function vehicles_list.is_spider_vehicle_deployable_from_container(item_name)
+    if not vehicles_list.is_spider_vehicle(item_name) then
+        return false
+    end
+    if vehicles_list.container_excluded_spider_vehicle_item_names[item_name] then
+        return false
+    end
+    local item_proto = prototypes.item[item_name]
+    if item_proto and item_proto.place_result then
+        local pr = item_proto.place_result
+        local ent_name = type(pr) == "string" and pr or pr.name
+        if ent_name and vehicles_list.container_excluded_spider_vehicle_entity_names[ent_name] then
+            return false
+        end
+    end
+    return true
 end
 
 -- Function to check if an item is a valid vehicle

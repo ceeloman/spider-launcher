@@ -84,34 +84,3 @@
 else
     log("[OVD] Space Exploration not detected, skipping SE planet creation")
 end
-
--- Remove SE planets if Space Exploration is not installed
-if not script.active_mods["space-exploration"] then
-    log("[OVD] Space Exploration not installed, removing SE planets from existing save")
-    
-    for i = 1, 40 do
-        local planet_name = "ovd-se-planet-" .. i
-        local surface = game.surfaces[planet_name]
-        
-        if surface then
-            -- Check if any players are on this surface
-            local players_on_surface = surface.find_entities_filtered{type = "character"}
-            if #players_on_surface > 0 then
-                log("[OVD] WARNING: Players found on " .. planet_name .. ", moving to nauvis")
-                for _, player_character in pairs(players_on_surface) do
-                    if player_character.player then
-                        player_character.player.teleport({0, 0}, game.surfaces["nauvis"])
-                    end
-                end
-            end
-            
-            -- Delete the surface
-            game.delete_surface(surface)
-            log("[OVD] Deleted surface: " .. planet_name)
-        end
-    end
-    
-    log("[OVD] SE planet cleanup complete")
-else
-    log("[OVD] Space Exploration installed, keeping SE planets")
-end

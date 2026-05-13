@@ -43,6 +43,34 @@ local function init_storage()
     debug_log("Storage initialized")
 end
 
+-- Remove ovd-se-planet-* surfaces when Space Exploration is not active (e.g. SE removed from the save).
+local function cleanup_ovd_se_planet_surfaces()
+    if is_space_exploration then
+        return
+    end
+    local nauvis = game.get_surface("nauvis")
+    if not nauvis or not nauvis.valid then
+        return
+    end
+    for i = 1, 40 do
+        local planet_name = "ovd-se-planet-" .. i
+        local surface = game.get_surface(planet_name)
+        if surface and surface.valid then
+            for _, player in pairs(game.players) do
+                if player.valid and player.surface == surface then
+                    player.teleport({x = 0, y = 0}, nauvis)
+                    log("[OVD] Moved player from " .. planet_name .. " to nauvis (SE not active)")
+                end
+            end
+            if game.delete_surface(surface) then
+                log("[OVD] Deleted orphan surface: " .. planet_name)
+            else
+                log("[OVD] WARNING: Could not delete surface: " .. planet_name)
+            end
+        end
+    end
+end
+
 -- SE-SPECIFIC: Register a cargo bay in storage
 
 -- ISSUE: Spaceships can change the surface of the bay, we need to track that or use the zone location at the time of deployment
@@ -135,7 +163,8 @@ end
 script.on_init(function()
     init_storage()
     init_players()
-    
+    cleanup_ovd_se_planet_surfaces()
+
     if is_space_exploration then
         register_all_cargo_bays()
     end
@@ -157,7 +186,8 @@ end)
 script.on_configuration_changed(function(data)
     init_storage()
     init_players()
-    
+    cleanup_ovd_se_planet_surfaces()
+
     if is_space_exploration then
         register_all_cargo_bays()
     end
@@ -671,10 +701,8 @@ script.on_event(defines.events.on_tick, function(event)
                             for i = 1, #inv do
                                 local stack = inv[i]
                                 if stack and stack.valid_for_read and stack.name == data.item_name and stack.grid then
-                                    player.opened = stack.grid
-                                    if not player.opened or player.opened ~= stack.grid then
-                                        player.opened = stack
-                                    end
+                                    -- Open stack (includes equipment); LuaEquipmentGrid breaks mods that read opened.type.
+                                    player.opened = stack
                                     break
                                 end
                             end
