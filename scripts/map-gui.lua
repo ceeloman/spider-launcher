@@ -293,10 +293,12 @@ local function find_orbital_vehicles_sa(player_surface)
                                 if stack.valid_for_read then
                                     local is_vehicle = vehicles_list.is_vehicle(stack.name)
                                     local is_spider_vehicle = vehicles_list.is_spider_vehicle(stack.name)
+                                    local is_deployable_vehicle = is_vehicle and (not is_spider_vehicle or vehicles_list.is_spider_vehicle_deployable_from_container(stack.name))
                                     
-                                    if is_vehicle and not processed_slots[i] then
+                                    if is_deployable_vehicle and not processed_slots[i] then
                                         local entity_name = stack.name
                                         local item_proto = prototypes.item[stack.name]
+                                        local is_entity_data = item_proto and item_proto.type == "item-with-entity-data"
                                         if item_proto and item_proto.place_result then
                                             local pr = item_proto.place_result
                                             entity_name = type(pr) == "string" and pr or pr.name
@@ -310,11 +312,11 @@ local function find_orbital_vehicles_sa(player_surface)
                                         
                                         local name = capitalize_first(stack.name)
                                         
-                                        if stack.entity_label and stack.entity_label ~= "" then
+                                        if is_entity_data and stack.entity_label and stack.entity_label ~= "" then
                                             name = stack.entity_label
                                         end
                                         
-                                        local color = stack.entity_color
+                                        local color = is_entity_data and stack.entity_color or nil
                                         local quality = stack.quality
                                         
                                         -- is this viewable by the player?
@@ -447,23 +449,25 @@ local function find_orbital_vehicles_se(player_surface, player)
                             if stack.valid_for_read then
                                 local is_vehicle = vehicles_list.is_vehicle(stack.name)
                                 local is_spider_vehicle = vehicles_list.is_spider_vehicle(stack.name)
+                                local is_deployable_vehicle = is_vehicle and (not is_spider_vehicle or vehicles_list.is_spider_vehicle_deployable_from_container(stack.name))
                                 
-                                if is_vehicle and not processed_slots[i] then
+                                if is_deployable_vehicle and not processed_slots[i] then
                                     processed_slots[i] = true
                                     
+                                    local item_proto = prototypes.item[stack.name]
+                                    local is_entity_data = item_proto and item_proto.type == "item-with-entity-data"
                                     local name = stack.name:gsub("^%l", string.upper)
                                     
-                                    if stack.entity_label and stack.entity_label ~= "" then
+                                    if is_entity_data and stack.entity_label and stack.entity_label ~= "" then
                                         name = stack.entity_label
                                     end
                                     
-                                    local color = stack.entity_color
+                                    local color = is_entity_data and stack.entity_color or nil
                                     local quality = stack.quality
                                     
                                     -- is this viewable by the player?
                                     local tooltip = "Space Surface: " .. target_orbit_surface.name .. "\nSlot: " .. i
                                     local entity_name = stack.name
-                                    local item_proto = prototypes.item[stack.name]
                                     if item_proto and item_proto.place_result then
                                         local pr = item_proto.place_result
                                         entity_name = type(pr) == "string" and pr or pr.name

@@ -2,7 +2,8 @@
 Version: 2.9.85
 Date: 2026-06-05
   Bugfixes:
-  - Changelog format fixes
+    - Changelog format fixes
+    - Orbital deployment shortcut: exclude spiderbot companion items from platform/cargo scans and only read entity label/color on item-with-entity-data stacks (same guards as chest remote deploy).
 ---------------------------------------------------------------------------------------------------
 Version: 2.9.84
 Date: 2026-06-05
