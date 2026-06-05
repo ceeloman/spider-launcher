@@ -246,7 +246,7 @@ local function add_item_entry(items_table, item, item_info)
         right_flow.style.horizontally_stretchable = true
         right_flow.add{
             type = "label",
-            caption = "string-mod-setting.not-available",
+            caption = {"string-mod-setting.not-available"},
             tooltip = {"string-mod-setting.no-items-available", item.display_name}
         }.style.font_color = {r=0.5, g=0.5, b=0.5}
     end

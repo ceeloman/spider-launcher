@@ -942,7 +942,7 @@ function equipment_grid_fill.get_or_create_fill_button(player)
         name = equipment_grid_fill.CARGO_POD_BUTTON_NAME .. "_btn",
         sprite = "ovd_cargo_pod",
         style = "slot_sized_button",
-        tooltip = "string-mod-setting.open-orbital-deployment-menu",
+        tooltip = {"string-mod-setting.open-orbital-deployment-menu"},
         enabled = true
     }
     
