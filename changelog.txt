@@ -1,6 +1,6 @@
 ---------------------------------------------------------------------------------------------------
 Version: 2.9.84
-Date: 2026-05-13
+Date: 2026-06-05
   Bugfixes:
     - Clean up for accidently created planets in non Space Exploration versions
     - Remote equipment UI: opening a spider vehicle stack now sets player.opened to the item stack (equipment still shown) instead of LuaEquipmentGrid, avoiding mods that assume opened is an item or entity. Applied in control.lua and map-gui.lua.
@@ -9,6 +9,10 @@ Date: 2026-05-13
   Changes:
     - After launching a cargo pod (vehicle or supplies), the game prints a launch message
     - deployment.lua: removed debug game.print of ammo data keys; equipment-grid-fill.lua: commented out noisy on_gui_opened debug prints.
+  Compatibility:
+    - Maraxsis
+      - Submarines now deploy to Maraxsis only
+      - No other vehicles can be deployed to Maraxsis
   Locale:
     - Updated
 ---------------------------------------------------------------------------------------------------
