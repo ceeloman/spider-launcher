@@ -3,6 +3,7 @@
 
 local vehicles_list = require("scripts.vehicles-list")
 local deployment = require("scripts.deployment")
+local maraxsis_compat = require("scripts.maraxsis-compat")
 
 -- Detect which mod is active
 local is_space_age = script.active_mods["space-age"] ~= nil
@@ -294,6 +295,17 @@ local function find_orbital_vehicles_sa(player_surface)
                                     local is_spider_vehicle = vehicles_list.is_spider_vehicle(stack.name)
                                     
                                     if is_vehicle and not processed_slots[i] then
+                                        local entity_name = stack.name
+                                        local item_proto = prototypes.item[stack.name]
+                                        if item_proto and item_proto.place_result then
+                                            local pr = item_proto.place_result
+                                            entity_name = type(pr) == "string" and pr or pr.name
+                                        end
+
+                                        if not maraxsis_compat.is_orbital_vehicle_allowed(stack.name, entity_name, player_surface) then
+                                            goto continue_sa_vehicle_slot
+                                        end
+
                                         processed_slots[i] = true
                                         
                                         local name = capitalize_first(stack.name)
@@ -307,7 +319,6 @@ local function find_orbital_vehicles_sa(player_surface)
                                         
                                         -- is this viewable by the player?
                                         local tooltip = {"", "Platform: ", surface.name, "\nSlot: ", i}
-                                        local entity_name = stack.name
                                         
                                         table.insert(available_vehicles, {
                                             name = name,
@@ -323,6 +334,7 @@ local function find_orbital_vehicles_sa(player_surface)
                                             entity_name = entity_name,
                                             is_spider = is_spider_vehicle
                                         })
+                                        ::continue_sa_vehicle_slot::
                                     end
                                 end
                             end
@@ -451,6 +463,11 @@ local function find_orbital_vehicles_se(player_surface, player)
                                     -- is this viewable by the player?
                                     local tooltip = "Space Surface: " .. target_orbit_surface.name .. "\nSlot: " .. i
                                     local entity_name = stack.name
+                                    local item_proto = prototypes.item[stack.name]
+                                    if item_proto and item_proto.place_result then
+                                        local pr = item_proto.place_result
+                                        entity_name = type(pr) == "string" and pr or pr.name
+                                    end
                                     
                                     -- Validate deployment is allowed
                                     local hub_zone = nil
@@ -481,7 +498,7 @@ local function find_orbital_vehicles_se(player_surface, player)
                                         end
                                     end
                                     
-                                    if can_deploy then
+                                    if can_deploy and maraxsis_compat.is_orbital_vehicle_allowed(stack.name, entity_name, player_surface) then
                                         table.insert(available_vehicles, {
                                             name = name,
                                             tooltip = tooltip,

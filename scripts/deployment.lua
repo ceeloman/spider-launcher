@@ -1,6 +1,8 @@
 -- scripts/deployment.lua
 -- Consolidated version with Space Age and Space Exploration compatibility
 
+local maraxsis_compat = require("scripts.maraxsis-compat")
+
 local deployment = {}
 
 ----------------------------------
@@ -324,6 +326,12 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
             end
         end
     end
+
+    local allowed, err_key = maraxsis_compat.can_deploy_vehicle_to_surface(vehicle_item_name, entity_name, player.surface)
+    if not allowed then
+        maraxsis_compat.print_deploy_error(player, err_key)
+        return
+    end
     
     -- Store grid data before removing from inventory
     local grid_data = {}
@@ -503,11 +511,6 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
         player.surface.request_to_generate_chunks(landing_pos, 1)
         player.surface.force_generate_chunk_requests()
     end
-    
-    local function is_walkable_tile(position)
-        local tile = player.surface.get_tile(position.x, position.y)
-        return tile and tile.valid and not tile.prototype.fluid
-    end
 
     -- Get landing position based on deploy_target
     if deploy_target == "target" and 
@@ -528,22 +531,9 @@ function deployment.deploy_spider_vehicle(player, vehicle_data, deploy_target, e
         end
     end
 
-    -- Find valid non-fluid tile
-    local valid_positions = {}
-    local radius = 5
-    for dx = -radius, radius do
-        for dy = -radius, radius do
-            local check_pos = {x = landing_pos.x + dx, y = landing_pos.y + dy}
-            if is_walkable_tile(check_pos) then
-                table.insert(valid_positions, check_pos)
-            end
-        end
-    end
-
-    if #valid_positions > 0 then
-        local random_index = math.random(1, #valid_positions)
-        landing_pos = valid_positions[random_index]
-    else
+    landing_pos = maraxsis_compat.find_landing_position(player.surface, landing_pos, entity_name, 5)
+    if not landing_pos then
+        player.print({"string-mod-setting.no-valid-landing-position"})
         return
     end
     
@@ -1121,6 +1111,11 @@ end
 
 -- Deploy supplies (robots) from orbit without a vehicle
 function deployment.deploy_supplies(player, target_surface, selected_bots)
+    if maraxsis_compat.blocks_supplies_deploy(target_surface) then
+        player.print({"string-mod-setting.maraxsis-no-land-vehicles"})
+        return
+    end
+
     -- Find ANY platform hub that has the requested bots
     local hub = nil
     local hub_inventory = nil
@@ -1181,27 +1176,9 @@ function deployment.deploy_supplies(player, target_surface, selected_bots)
         landing_pos.y = player.position.y + math.random(-5, 5)
     end
     
-    -- Ensure valid tile
-    local function is_walkable_tile(position)
-        local tile = target_surface.get_tile(position.x, position.y)
-        return tile and tile.valid and not tile.prototype.fluid
-    end
-    
-    local valid_positions = {}
-    local radius = 5
-    for dx = -radius, radius do
-        for dy = -radius, radius do
-            local check_pos = {x = landing_pos.x + dx, y = landing_pos.y + dy}
-            if is_walkable_tile(check_pos) then
-                table.insert(valid_positions, check_pos)
-            end
-        end
-    end
-    
-    if #valid_positions > 0 then
-        local random_index = math.random(1, #valid_positions)
-        landing_pos = valid_positions[random_index]
-    else
+    landing_pos = maraxsis_compat.find_landing_position(target_surface, landing_pos, nil, 5)
+    if not landing_pos then
+        player.print({"string-mod-setting.no-valid-landing-position"})
         return
     end
     

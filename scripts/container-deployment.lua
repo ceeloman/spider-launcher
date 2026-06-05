@@ -2,6 +2,7 @@
 -- Remote deployment of robots and spider vehicles from containers
 
 local vehicles_list = require("scripts.vehicles-list")
+local maraxsis_compat = require("scripts.maraxsis-compat")
 
 local container_deployment = {}
 
@@ -807,11 +808,28 @@ function container_deployment.deploy_vehicle(player, container, tags, quantity)
     if not vehicles_list.is_spider_vehicle_deployable_from_container(stack.name) then
         return
     end
+
+    local item_prototype_for_stack = prototypes.item[stack.name]
+
+    local entity_name = stack.name
+    if item_prototype_for_stack and item_prototype_for_stack.place_result then
+        local pr = item_prototype_for_stack.place_result
+        if type(pr) == "string" then
+            entity_name = pr
+        elseif pr.name then
+            entity_name = pr.name
+        end
+    end
+
+    local allowed, err_key = maraxsis_compat.can_deploy_vehicle_to_surface(stack.name, entity_name, container.surface)
+    if not allowed then
+        maraxsis_compat.print_deploy_error(player, err_key)
+        return
+    end
     
     -- Cap quantity to available count
     quantity = math.min(quantity, stack.count)
     
-    local item_prototype_for_stack = prototypes.item[stack.name]
     local is_entity_data = tags.is_entity_data
     if is_entity_data == nil and item_prototype_for_stack then
         is_entity_data = item_prototype_for_stack.type == "item-with-entity-data"
