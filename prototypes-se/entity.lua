@@ -36,11 +36,11 @@ data:extend({
             shift = {3, 0.5},
             draw_as_shadow = true
           }),
-          util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/hatches/planet-cargo-bay-occluder",
-          {
-            scale = 0.5,
-            shift = {0, -1}
-          }),
+          --util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/hatches/planet-cargo-bay-occluder",
+          --{
+          --  scale = 0.5,
+          --  shift = {0, -1}
+          --}),
           util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/bays/shared-cargo-bay-emission",
           {
             scale = 0.5,
@@ -125,17 +125,17 @@ data:extend({
               })
             }
           },
-          {
-            render_layer = "cargo-hatch",
-            layers =
-            {
-              util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/hatches/planet-cargo-bay-occluder",
-              {
-                scale = 0.5,
-                shift = {0, -1}
-              }),
-            }
-          }
+          -- {
+          --   render_layer = "cargo-hatch",
+          --   layers =
+          --   {
+          --     util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/hatches/planet-cargo-bay-occluder",
+          --     {
+          --       scale = 0.5,
+          --       shift = {0, -1}
+          --     }),
+          --   }
+          -- }
         }
       },
       platform_graphics_set =
@@ -158,11 +158,11 @@ data:extend({
             render_layer = "object",
             layers =
             {
-              util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/bays/platform-cargo-bay-3",
-              {
-                scale = 0.5,
-                shift = {0, -1}
-              }),
+              -- util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/bays/platform-cargo-bay-3",
+              -- {
+              --   scale = 0.5,
+              --   shift = {0, -1}
+              -- }),
               util.sprite_load("__spider-launcher__/graphics/entity/cargo-hubs/bays/shared-cargo-bay-shadow",
               {
                 scale = 0.5,

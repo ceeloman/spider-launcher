@@ -1842,11 +1842,30 @@ function equipment_grid_fill.check_and_force_render_mode(player)
     end
     
     local grid = opened
+
+    -- Only vehicle equipment grids need remote view; skip player armor and other non-vehicle grids
+    local success_owner, itemstack_owner = pcall(function()
+        return grid.itemstack_owner
+    end)
+
+    if not success_owner or not itemstack_owner then
+        return
+    end
+
+    if not vehicles_list.is_vehicle(itemstack_owner.name) then
+        return
+    end
+
     local success_entity, entity_owner = pcall(function()
         return grid.entity_owner
     end)
     
     if not success_entity or not entity_owner or not entity_owner.valid then
+        return
+    end
+
+    -- Equipped armor on the player character should use vanilla behaviour
+    if player.character and player.character.valid and entity_owner == player.character then
         return
     end
     
@@ -1861,18 +1880,12 @@ function equipment_grid_fill.check_and_force_render_mode(player)
             tick = game.tick
         }
     else
-        local success_owner, itemstack_owner = pcall(function()
-            return grid.itemstack_owner
-        end)
-        
-        if success_owner and itemstack_owner then
-            storage.pending_equipment_reopen[player.index] = {
-                entity = entity_owner,
-                item_name = itemstack_owner.name,
-                is_vehicle = false,
-                tick = game.tick
-            }
-        end
+        storage.pending_equipment_reopen[player.index] = {
+            entity = entity_owner,
+            item_name = itemstack_owner.name,
+            is_vehicle = false,
+            tick = game.tick
+        }
     end
     
     player.set_controller{
