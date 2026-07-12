@@ -151,14 +151,14 @@ local function get_ammo_damage(ammo_name)
         local ammo_prototype = prototypes.item[ammo_name]
         if ammo_prototype.type == "ammo" and type(ammo_prototype.get_ammo_type) == "function" then
             local ammo_data = ammo_prototype.get_ammo_type()
-            if ammo_data then
-                if ammo_data.action then
-                    game.print("Has action, keys: " .. serpent.line(table_keys(ammo_data.action)))
-                    if ammo_data.action.action_delivery then
-                        game.print("Has action_delivery, type: " .. tostring(ammo_data.action.action_delivery.type))
-                    end
-                end
-            end
+            -- if ammo_data then
+            --     if ammo_data.action then
+            --         game.print("Has action, keys: " .. serpent.line(table_keys(ammo_data.action)))
+            --         if ammo_data.action.action_delivery then
+            --             game.print("Has action_delivery, type: " .. tostring(ammo_data.action.action_delivery.type))
+            --         end
+            --     end
+            -- end
         end
     end
     
