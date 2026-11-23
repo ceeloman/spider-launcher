@@ -10,6 +10,14 @@ local is_space_age = script.active_mods["space-age"] ~= nil
 local is_space_exploration = script.active_mods["space-exploration"] ~= nil
 local is_tfmg_active = script.active_mods["TFMG"] ~= nil or script.active_mods["tfmg"] ~= nil
 
+-- Factorio 2.1 replaced fuel_category with the fuel_categories array
+local function is_chemical_fuel(item)
+    for _, category in pairs(item.fuel_categories or {}) do
+        if category == "chemical" then return true end
+    end
+    return false
+end
+
 local map_gui = {}
 
 -- ================HELPER FUNCTIONS============================================================
@@ -1210,7 +1218,7 @@ function map_gui.show_extras_menu(player, vehicle_data, deploy_target)
                     local stack = inventory[i]
                     if stack and stack.valid_for_read then
                         local item = prototypes.item[stack.name]
-                        if item and item.fuel_value and item.fuel_category == "chemical" and
+                        if item and item.fuel_value and is_chemical_fuel(item) and
                            not string.find(stack.name:lower(), "seed") and
                            not string.find(stack.name:lower(), "egg") and
                            not string.find(stack.name:lower(), "spoil") and
