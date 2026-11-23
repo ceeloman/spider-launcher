@@ -1,3 +1,11 @@
+-- Factorio 2.1 replaced fuel_category with the fuel_categories array
+local function is_chemical_fuel(item)
+    for _, category in pairs(item.fuel_categories or {}) do
+        if category == "chemical" then return true end
+    end
+    return false
+end
+
 local function create_entity_sprite_from_item(item_prototype, item_name, prefix)
     local sprite_name = prefix .. item_name
     if data.raw["sprite"][sprite_name] then return end
@@ -49,7 +57,7 @@ end
 local function create_filtered_fuel_sprites()
     for name, item in pairs(data.raw["item"]) do
         if item.fuel_value then
-            if item.fuel_category == "chemical" then
+            if is_chemical_fuel(item) then
                 if not string.find(name:lower(), "seed") and
                    not string.find(name:lower(), "egg") and
                    not string.find(name:lower(), "spoil") then

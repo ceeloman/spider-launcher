@@ -9,6 +9,14 @@ local deployment = {}
 ---------HELPER FUNCTIONS---------
 ----------------------------------
 
+-- Factorio 2.1 replaced fuel_category with the fuel_categories array
+local function is_chemical_fuel(item)
+    for _, category in pairs(item.fuel_categories or {}) do
+        if category == "chemical" then return true end
+    end
+    return false
+end
+
 -- Helper function to safely get quality name with debug logging
 local function get_quality_name(quality_obj, context)
     if not quality_obj then
@@ -875,7 +883,7 @@ function deployment.on_cargo_pod_finished_descending(event)
                         
                         for _, extra in ipairs(extras) do
                             local item = prototypes.item[extra.name]
-                            if item and item.fuel_value and item.fuel_category == "chemical" then
+                            if item and item.fuel_value and is_chemical_fuel(item) then
                                 if item.fuel_value > highest_fuel_value then
                                     highest_fuel_value = item.fuel_value
                                     best_fuel_item = extra
